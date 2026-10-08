@@ -37,7 +37,8 @@ MEMORY
     FLASH : ORIGIN = FLASHORIG, LENGTH = FLASHSIZE
 }
 
-#if defined(IPOD_NANO2G)
+#if defined(IPOD_NANO2G) || defined(SAMSUNG_YPS3)
+/* YP-S3: loaded into IRAM over USB by the boot ROM DFU mode */
 #define LOAD_AREA IRAM
 #else
 #define NEEDS_INTVECT_COPYING

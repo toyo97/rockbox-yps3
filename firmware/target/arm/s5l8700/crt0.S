@@ -36,9 +36,26 @@ start:
     ldr pc, =fiq_handler
 #if CONFIG_CPU==S5L8700
     .word 0x43554644 /* DFUC */
+    .word 0          /* image length, filled in by the DFU loader */
 #endif
     .ltorg
 _newstart:
+#if defined(SAMSUNG_YPS3) && defined(BOOTLOADER)
+    /* The boot ROM DFU mode may put us somewhere else in IRAM than where
+       we are linked (0x22020000 on the Meizu M3). Copy the image to its
+       link address first. Only position independent code before this. */
+    adr     r0, start           /* where we are running */
+    ldr     r1, =start          /* where we are linked */
+    cmp     r0, r1
+    beq     2f
+    ldr     r2, =_dataend       /* end of the loaded image */
+1:
+    cmp     r1, r2
+    ldrlo   r3, [r0], #4
+    strlo   r3, [r1], #4
+    blo     1b
+2:
+#endif
 #if CONFIG_CPU!=S5L8701 || !defined(BOOTLOADER)
     ldr pc, =newstart2 // we do not want to execute from 0x0 as iram will be mapped there
     .section .init.text,"ax",%progbits
@@ -338,8 +355,8 @@ start_loc:
     mcr p15, 0, r0, c1, c0, 0 // enable protection unit
 #endif
 
-#if CONFIG_CPU==S5L8700 || !defined(BOOTLOADER)
-    /* Copy interrupt vectors to iram */
+#if (CONFIG_CPU==S5L8700 && !defined(SAMSUNG_YPS3)) || !defined(BOOTLOADER)
+    /* Copy interrupt vectors to iram (the YP-S3 bootloader runs from iram) */
     ldr     r2, =_intvectstart
     ldr     r3, =_intvectend
     ldr     r4, =_intvectcopy

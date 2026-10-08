@@ -447,7 +447,8 @@ drivers/touchscreen.c
 #if (CONFIG_STORAGE & STORAGE_NAND) && (CONFIG_NAND == NAND_TCC)
 target/arm/ata-nand-telechips.c
 #endif
-#if (CONFIG_STORAGE & STORAGE_NAND) && (CONFIG_NAND == NAND_SAMSUNG)
+#if (CONFIG_STORAGE & STORAGE_NAND) && (CONFIG_NAND == NAND_SAMSUNG) \
+    && !defined(SAMSUNG_YPS3) /* YP-S3: FTL not implemented yet */
 target/arm/s5l8700/ata-nand-s5l8700.c
 #endif
 #if (CONFIG_STORAGE & STORAGE_NAND) && (CONFIG_NAND == NAND_RK27XX)
@@ -1911,6 +1912,21 @@ target/arm/samsung/yh925/lcd-as-yh925.S
 target/arm/samsung/yh925/powermgmt-yh925.c
 target/arm/samsung/fmradio-yh92x.c
 #endif /* SAMSUNG_YH925 */
+
+#ifdef SAMSUNG_YPS3
+#ifdef BOOTLOADER
+/* the hardware test bootloader exercises the tuner and the codec */
+tuner.c
+drivers/tuner/si4700.c
+target/arm/s5l8700/wmcodec-s5l8700.c
+#endif
+target/arm/s5l8700/yps3/button-yps3.c
+target/arm/s5l8700/yps3/lcd-yps3.c
+target/arm/s5l8700/yps3/fmradio-i2c-yps3.c
+target/arm/s5l8700/yps3/backlight-yps3.c
+target/arm/s5l8700/yps3/nand-yps3.c
+target/arm/s5l8700/yps3/power-yps3.c
+#endif /* SAMSUNG_YPS3 */
 
 #ifdef PBELL_VIBE500
 drivers/synaptics-mep.c

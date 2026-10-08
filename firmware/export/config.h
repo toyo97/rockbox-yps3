@@ -119,6 +119,7 @@
 #define SANSA_FUZE_PAD     36
 #define SAMSUNG_YH820_PAD  38
 #define ONDAVX777_PAD      39
+#define SAMSUNG_YPS3_PAD   40
 #define PHILIPS_HDD6330_PAD 42
 #define PBELL_VIBE500_PAD 43
 #define MPIO_HD200_PAD     44
@@ -235,6 +236,7 @@
 #define LCD_SA9200   25 /* as used by the Philips SA9200 */
 #define LCD_S6B33B2  26 /* as used by the Samsumg YH820 */
 #define LCD_HDD1630  27 /* as used by the Philips HDD1630 */
+#define LCD_YPS3     28 /* as used by the Samsung YP-S3 */
 #define LCD_ONDAVX747 29 /* as used by the Onda VX747 */
 #define LCD_ONDAVX767 30 /* as used by the Onda VX767 */
 #define LCD_SSD1303   31 /* as used by the Sansa Clip */
@@ -481,6 +483,8 @@ Lyre prototype 1 */
 #include "config/samsungyh920.h"
 #elif defined(SAMSUNG_YH925)
 #include "config/samsungyh925.h"
+#elif defined(SAMSUNG_YPS3)
+#include "config/samsungyps3.h"
 #elif defined(PBELL_VIBE500)
 #include "config/vibe500.h"
 #elif defined(MPIO_HD200)

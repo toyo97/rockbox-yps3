@@ -199,11 +199,16 @@ void system_reboot(void)
 #endif
 }
 
+#ifdef IPOD_NANO2G
 extern void post_mortem_stub(void);
+#endif
 
 void system_exception_wait(void)
 {
+#ifdef IPOD_NANO2G
+    /* the stub drives the S5L8701 USB2 OTG core, which the S5L8700 lacks */
     post_mortem_stub();
+#endif
     while(1);
 }
 

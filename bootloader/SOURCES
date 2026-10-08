@@ -40,6 +40,8 @@ mrobe500.c
 #elif defined(CPU_TCC780X)
 telechips.c
 show_logo.c
+#elif defined(SAMSUNG_YPS3)
+samsung_yps3.c
 #elif defined(ONDA_VX747) || defined(ONDA_VX747P) || defined(ONDA_VX767) || defined(ONDA_VX777)
 ondavx747.c
 show_logo.c

@@ -68,6 +68,281 @@ static inline void delay(unsigned int duration)
 // forward declaration
 static int rds_decode(int line, struct si4700_dbg_info *nfo);
 
+/*  NAND probe
+
+    The main open question for this port is how the original firmware lays
+    out its data in the NAND flash. The iPod Nano 2G (same SoC family) uses
+    Samsung's "Whimory" FTL, which Rockbox already implements in
+    target/arm/s5l8700/ipodnano2g/ftl-nano2g.c. This screen lets a tester
+    look at raw pages and gathers some statistics that tell us whether the
+    YP-S3 uses the same on-flash format:
+    - nano2g keeps "DEVICEINFOSIGN" pages in the last 10% of each chip
+    - byte 9 of the spare area of each page is a page type:
+      0x40/0x41 user data, 0x43 FTL context, 0x44 block map,
+      0x46 erase counters, 0x47 mount mark, 0x80 VFL context
+*/
+
+#define NAND_MAX_PAGE   4096
+#define NAND_MAX_SPARE  128
+
+static unsigned char page_buf[NAND_MAX_PAGE + NAND_MAX_SPARE];
+
+struct nand_geometry {
+    unsigned int pagesize;      /* main area bytes */
+    unsigned int sparesize;     /* spare area bytes */
+    unsigned int pagesperblock;
+    unsigned int blocks;
+};
+
+/* derive geometry from the 4-byte ID (first byte in the low bits) */
+static void nand_decode_id(unsigned int id, struct nand_geometry *geo)
+{
+    unsigned int devcode = (id >> 8) & 0xFF;
+    unsigned int b4 = (id >> 24) & 0xFF;
+    unsigned int blocksize;
+    unsigned int megabits;
+
+    geo->pagesize = 1024 << (b4 & 3);
+    if (geo->pagesize > NAND_MAX_PAGE) {
+        geo->pagesize = NAND_MAX_PAGE;
+    }
+    geo->sparesize = (geo->pagesize / 512) * (8 << ((b4 >> 2) & 1));
+    if (geo->sparesize > NAND_MAX_SPARE) {
+        geo->sparesize = NAND_MAX_SPARE;
+    }
+    blocksize = 65536 << ((b4 >> 4) & 3);
+    geo->pagesperblock = blocksize / geo->pagesize;
+
+    switch (devcode) {
+    case 0xF1: megabits = 1024; break;
+    case 0xDA: megabits = 2048; break;
+    case 0xDC: megabits = 4096; break;
+    case 0xD3: megabits = 8192; break;
+    case 0xD5: megabits = 16384; break;
+    case 0xD7: megabits = 32768; break;
+    default:   megabits = 0; break;
+    }
+    geo->blocks = megabits ? (megabits / 8) * (1024 / (blocksize / 1024)) : 0;
+}
+
+static bool nand_bank_present(unsigned int id)
+{
+    return (id != 0) && (id != 0xFFFFFFFF);
+}
+
+static unsigned int button_wait_press(void)
+{
+    unsigned int button;
+
+    /* wait for release of previous key, then for a new press */
+    while (button_read_device() & BUTTON_MAIN);
+    do {
+        button = button_read_device() & BUTTON_MAIN;
+    } while (button == 0);
+    return button;
+}
+
+static void show_hex(int line, const char *label, const unsigned char *p,
+                     unsigned int len)
+{
+    char str[64];
+    unsigned int i, j;
+    int col;
+
+    lcd_puts(0, line++, label);
+    for (i = 0; i < len; i += 8) {
+        col = snprintf(str, sizeof(str), "%02X:", i & 0xFF);
+        for (j = 0; j < 8; j++) {
+            col += snprintf(str + col, sizeof(str) - col, "%02X", p[i + j]);
+        }
+        col += snprintf(str + col, sizeof(str) - col, " ");
+        for (j = 0; j < 8; j++) {
+            unsigned char c = p[i + j];
+            str[col++] = (c >= 0x20 && c < 0x7F) ? c : '.';
+        }
+        str[col] = '\0';
+        lcd_puts(0, line++, str);
+    }
+}
+
+/* Scan the chip and gather FTL hints, results are shown on screen */
+static void nand_scan(int bank, const struct nand_geometry *geo)
+{
+    static unsigned int typecount[256];
+    char str[64];
+    unsigned int block, page, i, pagenum;
+    unsigned int devinfo_hits = 0, devinfo_first = 0, errors = 0;
+    unsigned int lowest;
+    unsigned char spare[16];
+    int line = 0;
+
+    lcd_clear_display();
+    lcd_puts(0, line++, "Scanning, please wait...");
+    lcd_update();
+
+    memset(typecount, 0, sizeof(typecount));
+
+    /* spare type byte of the first page of every block */
+    for (block = 0; block < geo->blocks; block++) {
+        pagenum = block * geo->pagesperblock;
+        if (nand_ll_read_raw(bank, pagenum, geo->pagesize, spare, 12)) {
+            errors++;
+            continue;
+        }
+        typecount[spare[9]]++;
+        if ((block & 0xFF) == 0) {
+            snprintf(str, sizeof(str), "block %u / %u", block, geo->blocks);
+            lcd_puts(0, 1, str);
+            lcd_update();
+        }
+    }
+
+    /* "DEVICEINFOSIGN" pages, like the nano2g FTL looks for them */
+    lowest = geo->blocks - geo->blocks / 10;
+    for (block = geo->blocks - 1; block >= lowest && block > 0; block--) {
+        for (page = geo->pagesperblock - 8; page < geo->pagesperblock; page++) {
+            pagenum = block * geo->pagesperblock + page;
+            if (nand_ll_read_raw(bank, pagenum, 0, page_buf, 16)) {
+                errors++;
+                continue;
+            }
+            if (memcmp(page_buf, "DEVICEINFOSIGN\0", 15) == 0) {
+                if (devinfo_hits == 0) {
+                    devinfo_first = pagenum;
+                }
+                devinfo_hits++;
+            }
+        }
+    }
+
+    lcd_clear_display();
+    line = 0;
+    snprintf(str, sizeof(str), "Scan of bank %d, %u blocks", bank, geo->blocks);
+    lcd_puts(0, line++, str);
+    snprintf(str, sizeof(str), "read errors: %u", errors);
+    lcd_puts(0, line++, str);
+    snprintf(str, sizeof(str), "DEVICEINFOSIGN: %u", devinfo_hits);
+    lcd_puts(0, line++, str);
+    if (devinfo_hits) {
+        snprintf(str, sizeof(str), " first at page %u", devinfo_first);
+        lcd_puts(0, line++, str);
+    }
+    lcd_puts(0, line++, "spare[9] of 1st page/block:");
+    snprintf(str, sizeof(str), " FF(empty):%u", typecount[0xFF]);
+    lcd_puts(0, line++, str);
+    snprintf(str, sizeof(str), " 40:%u 41:%u", typecount[0x40], typecount[0x41]);
+    lcd_puts(0, line++, str);
+    snprintf(str, sizeof(str), " 43:%u 44:%u 46:%u", typecount[0x43],
+             typecount[0x44], typecount[0x46]);
+    lcd_puts(0, line++, str);
+    snprintf(str, sizeof(str), " 47:%u 80:%u", typecount[0x47], typecount[0x80]);
+    lcd_puts(0, line++, str);
+    lcd_puts(0, line++, " other values (top 6):");
+    /* show the most frequent remaining values */
+    for (i = 0; i < 6; i++) {
+        unsigned int v, best = 0, bestcount = 0;
+        for (v = 0; v < 256; v++) {
+            if (v == 0xFF || v == 0x40 || v == 0x41 || v == 0x43 ||
+                v == 0x44 || v == 0x46 || v == 0x47 || v == 0x80) {
+                continue;
+            }
+            if (typecount[v] > bestcount) {
+                best = v;
+                bestcount = typecount[v];
+            }
+        }
+        if (bestcount == 0) {
+            break;
+        }
+        snprintf(str, sizeof(str), "  %02X: %u", best, bestcount);
+        lcd_puts(0, line++, str);
+        typecount[best] = 0;
+    }
+    lcd_puts(0, line + 1, "Please photograph this screen");
+    lcd_puts(0, line + 2, "Press any key");
+    lcd_update();
+    button_wait_press();
+}
+
+static void nand_probe(const unsigned int *ids)
+{
+    struct nand_geometry geo;
+    char str[64];
+    int bank = 0;
+    unsigned int page = 0;
+    unsigned int button;
+    int rc, line;
+
+    for (bank = 0; bank < 4 && !nand_bank_present(ids[bank]); bank++);
+    if (bank == 4) {
+        lcd_clear_display();
+        lcd_puts(0, 0, "No NAND chips found");
+        lcd_puts(0, 1, "Press any key");
+        lcd_update();
+        button_wait_press();
+        return;
+    }
+
+    while (true) {
+        nand_decode_id(ids[bank], &geo);
+        if (geo.blocks && page >= geo.blocks * geo.pagesperblock) {
+            page = 0;
+        }
+
+        rc = nand_ll_read_raw(bank, page, 0, page_buf,
+                              geo.pagesize + geo.sparesize);
+
+        lcd_clear_display();
+        line = 0;
+        snprintf(str, sizeof(str), "NAND bank %d ID %08X", bank, ids[bank]);
+        lcd_puts(0, line++, str);
+        snprintf(str, sizeof(str), "%u+%u %upg/blk %ublk",
+                 geo.pagesize, geo.sparesize, geo.pagesperblock, geo.blocks);
+        lcd_puts(0, line++, str);
+        snprintf(str, sizeof(str), "pg %u blk %u.%u rc %d", page,
+                 page / geo.pagesperblock, page % geo.pagesperblock, rc);
+        lcd_puts(0, line++, str);
+        show_hex(line, "data[0..63]:", page_buf, 64);
+        line += 9;
+        show_hex(line, "spare[0..63]:", page_buf + geo.pagesize, 64);
+        line += 9;
+        lcd_puts(0, line++, "U/D pg L/R blk MENU bank");
+        lcd_puts(0, line++, "BACK scan  SELECT exit");
+        lcd_update();
+
+        button = button_wait_press();
+        if (button & BUTTON_SELECT) {
+            break;
+        }
+        else if (button & BUTTON_UP) {
+            page++;
+        }
+        else if (button & BUTTON_DOWN) {
+            if (page > 0) page--;
+        }
+        else if (button & BUTTON_RIGHT) {
+            page += geo.pagesperblock;
+        }
+        else if (button & BUTTON_LEFT) {
+            page = (page >= geo.pagesperblock) ? page - geo.pagesperblock : 0;
+        }
+        else if (button & BUTTON_MENU) {
+            do {
+                bank = (bank + 1) % 4;
+            } while (!nand_bank_present(ids[bank]));
+            page = 0;
+        }
+        else if (button & BUTTON_BACK) {
+            if (geo.blocks) {
+                nand_scan(bank, &geo);
+            }
+        }
+    }
+
+    while (button_read_device() & BUTTON_MAIN);
+    lcd_clear_display();
+}
+
 void main(void)
 {
     char mystring[64];
@@ -124,7 +399,7 @@ void main(void)
     si4700_set(RADIO_REGION, 0);
     si4700_set(RADIO_FREQUENCY, fm_frequency);
     
-    lcd_puts_scroll(0,0,"+++ this is a very very long line to test scrolling. ---");
+    lcd_puts(0, 0, "Rockbox YP-S3 hardware test");
 
     // WM1800 codec configuration
     wmcodec_write(0x0F, 0);     // codec reset
@@ -142,6 +417,7 @@ void main(void)
 
     nand_ll_init();
     for (i = 0; i < 4; i++) {
+        nand_ll_reset(i);
         nand_ids[i] = nand_ll_read_id(i);
     }
 
@@ -151,7 +427,8 @@ void main(void)
 
 #if 1   /* enable to see GPIOs */
         snprintf(mystring, 64, "%02X %02X %02X %02X %02X %02X %02X %02X",
-            PDAT0, PDAT1, PDAT2, PDAT3, PDAT4, PDAT5, PDAT6, PDAT7);
+            (unsigned)PDAT0, (unsigned)PDAT1, (unsigned)PDAT2, (unsigned)PDAT3,
+            (unsigned)PDAT4, (unsigned)PDAT5, (unsigned)PDAT6, (unsigned)PDAT7);
         lcd_puts(0, line++, mystring);
 #endif
 
@@ -218,16 +495,19 @@ void main(void)
 #endif
 
 #if 1   /* enable this so see USB info */
-        snprintf(mystring, 64, "CLK %08X CLK2 %08X", CLKCON, CLKCON2);
+        snprintf(mystring, 64, "CLK %08X CLK2 %08X", (unsigned)CLKCON, (unsigned)CLKCON2);
         lcd_puts(0, line++, mystring);
 
-        snprintf(mystring, 64, "%04X %04X %04X %04X", PHYCTRL, PHYPWR, URSTCON, UCLKCON);
+        snprintf(mystring, 64, "%04X %04X %04X %04X", (unsigned)PHYCTRL, (unsigned)PHYPWR,
+                 (unsigned)URSTCON, (unsigned)UCLKCON);
         lcd_puts(0, line++, mystring);
 
-        snprintf(mystring, 64, "SCR %04X SSR %04X EIR %04X", USB_SCR, USB_SSR, USB_EIR);
+        snprintf(mystring, 64, "SCR %04X SSR %04X EIR %04X", (unsigned)USB_SCR,
+                 (unsigned)USB_SSR, (unsigned)USB_EIR);
         lcd_puts(0, line++, mystring);
 
-        snprintf(mystring, 64, "FAR %04X FNR %04X EP0 %04X", USB_FAR, USB_FNR, USB_EP0SR);
+        snprintf(mystring, 64, "FAR %04X FNR %04X EP0 %04X", (unsigned)USB_FAR,
+                 (unsigned)USB_FNR, (unsigned)USB_EP0SR);
         lcd_puts(0, line++, mystring);
 #endif
 
@@ -271,6 +551,13 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif
 
+#if 1   /* SELECT opens the NAND probe */
+        button = button_read_device();
+        if (button & BUTTON_SELECT) {
+            nand_probe(nand_ids);
+        }
+#endif
+
 #if 1   /* power off using power button */
         button = button_read_device();
         if (button & BUTTON_POWER) {
@@ -292,9 +579,9 @@ void main(void)
 #endif
 
 #if 1
-        snprintf(mystring, 64, "TIMER A:%08X B:%08X", TACNT, TBCNT);
+        snprintf(mystring, 64, "TIMER A:%08X B:%08X", (unsigned)TACNT, (unsigned)TBCNT);
         lcd_puts(0, line++, mystring);
-        snprintf(mystring, 64, "TIMER C:%08X D:%08X", TCCNT, TDCNT);
+        snprintf(mystring, 64, "TIMER C:%08X D:%08X", (unsigned)TCCNT, (unsigned)TDCNT);
         lcd_puts(0, line++, mystring);
 #endif
 
