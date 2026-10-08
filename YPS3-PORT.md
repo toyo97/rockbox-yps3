@@ -105,6 +105,16 @@ storage, boot and audio paths.
 A full `--type=n` build gets far today and fails on about 10 missing pieces:
 keymap, audio codec, SDRAM timings and the debug screen.
 
+## DFU mode facts
+
+* Samsung's YP-S3 service manual installs a Windows driver called
+  `Bluesdfu_vid419_pid0145.inf`, so in DFU mode the player should appear as
+  USB device **`0419:0145`**. That is the same ID as the Meizu M6SL, whose
+  `meizu_dfu` mode uses the standard "UFD" suffix (the loader's default).
+* The M6SL boot ROM loads images at the start of IRAM (`0x22000000`), where
+  the bootloader is linked, so it should not need to copy itself at all. The
+  self-copy only matters if the boot ROM loads it somewhere else.
+
 ## Testing on a real player
 
 The test is read-only. The bootloader runs from RAM and only sends

@@ -42,13 +42,14 @@ import zlib
 BLOCK_SIZE = 2048
 TIMEOUT_MS = 0xA000
 
-# The Meizu players enumerate with Samsung's semiconductor vendor id in DFU
-# mode. The YP-S3 is expected to do the same, but this is not confirmed;
+# The S5L8700 boot ROM enumerates with Samsung's semiconductor vendor id in
+# DFU mode. Samsung's YP-S3 service manual ships a DFU driver named
+# "Bluesdfu_vid419_pid0145.inf", i.e. the same 0419:0145 as the Meizu M6SL.
 # "list" shows every candidate so the ids can be reported.
 DFU_VENDOR_IDS = (0x0419,)
 KNOWN_PRODUCT_IDS = {
     0x0141: "Meizu M3 / M6 (S5L8700 DFU)",
-    0x0145: "Meizu M6SL (S5L8700 DFU)",
+    0x0145: "Samsung YP-S3 / Meizu M6SL (S5L8700 DFU)",
 }
 OTHER_INTERESTING_VIDS = {
     0x04E8: "Samsung Electronics (normal firmware mode?)",
