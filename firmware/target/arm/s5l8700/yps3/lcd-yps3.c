@@ -294,6 +294,12 @@ void lcd_init_device(void)
     }
 }
 
+/* 1 or 2, valid after lcd_init_device */
+int lcd_yps3_type(void)
+{
+    return lcd_type;
+}
+
 void lcd_update_rect(int x, int y, int width, int height)
 {
     fb_data* p;
@@ -306,8 +312,8 @@ void lcd_update_rect(int x, int y, int width, int height)
         lcd_set_position1(x, y);
 
         for (h = 0; h < height; h++) {
-            p = fbaddr(0,y);
-            for (w = 0; w < LCD_WIDTH; w++) {
+            p = fbaddr(x,y);
+            for (w = 0; w < width; w++) {
                 while (LCD_STATUS & 0x10);
                 LCD_WDATA = *p++;
             }

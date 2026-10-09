@@ -67,6 +67,7 @@ static inline void delay(unsigned int duration)
 
 // forward declaration
 static int rds_decode(int line, struct si4700_dbg_info *nfo);
+int lcd_yps3_type(void);
 
 /*  NAND probe
 
@@ -384,6 +385,17 @@ void main(void)
     lcd_update();
 
     power_init();
+
+    /* Blink the LED behind the middle button once for LCD type 1 and twice
+       for type 2. Only type 2 has been tested, so if the screen stays blank
+       this tells us which display driver needs work. */
+    PCON4 = (PCON4 & ~0x00000F00) | 0x00000100;   /* P4.2 output */
+    for (i = 0; i < lcd_yps3_type(); i++) {
+        PDAT4 |= (1 << 2);
+        delay(LONG_DELAY * 60);
+        PDAT4 &= ~(1 << 2);
+        delay(LONG_DELAY * 60);
+    }
     
     i2c_init();
     fmradio_i2c_init();
