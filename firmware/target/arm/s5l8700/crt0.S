@@ -41,6 +41,24 @@ start:
     .ltorg
 _newstart:
 #if defined(SAMSUNG_YPS3) && defined(BOOTLOADER)
+    /* Debug aid: as the very first thing, switch on the LED behind the
+       middle button (P4.2) and the backlight (P0.0). If these stay off, the
+       image is not being executed from where the boot ROM put it. */
+    ldr     r1, =0x3CF00000     /* GPIO base */
+    ldr     r0, [r1, #0x40]     /* PCON4 */
+    bic     r0, r0, #0xF00
+    orr     r0, r0, #0x100      /* P4.2 output */
+    str     r0, [r1, #0x40]
+    ldr     r0, [r1, #0x44]     /* PDAT4 */
+    orr     r0, r0, #0x4
+    str     r0, [r1, #0x44]
+    ldr     r0, [r1]            /* PCON0 */
+    bic     r0, r0, #0xF
+    orr     r0, r0, #0x1        /* P0.0 output */
+    str     r0, [r1]
+    ldr     r0, [r1, #4]        /* PDAT0 */
+    orr     r0, r0, #0x1
+    str     r0, [r1, #4]
     /* The boot ROM DFU mode may put us somewhere else in IRAM than where
        we are linked (0x22020000 on the Meizu M3). Copy the image to its
        link address first. Only position independent code before this. */

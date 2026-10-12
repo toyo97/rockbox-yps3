@@ -399,6 +399,7 @@ static void si4700_set_frequency(int freq)
     int band = SYSCONFIG2_BANDr(cache[SYSCONFIG2]);
     int chan = (freq - bands[band]) / spacings[space];
     int readchan;
+    int tries = 0;
 
     do
     {
@@ -410,7 +411,8 @@ static void si4700_set_frequency(int freq)
         readchan = si4700_read_reg(READCHAN) & READCHAN_READCHAN;
 
         si4700_write_clear(CHANNEL, CHANNEL_TUNE);
-    } while (!((cache[STATUSRSSI] & STATUSRSSI_STC) && (readchan == chan)));
+    } while (!((cache[STATUSRSSI] & STATUSRSSI_STC) && (readchan == chan))
+             && ++tries < 20); /* don't hang forever if the chip won't tune */
 }
 
 static int si4700_tuned(void)

@@ -20,6 +20,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "system.h"
 #include "s5l87xx.h"
 #include "nand-target.h"
 
@@ -113,13 +114,15 @@ static int nand_wait_ready(void)
         return -1;
     }
     do {
-        if (nand_read_word(1, &status)) {
+        /* the chip repeats the status byte, so read a whole word and
+           don't care in which byte lane it ends up */
+        if (nand_read_word(4, &status)) {
             return -1;
         }
         if (--timeout == 0) {
             return -1;
         }
-    } while ((status & NAND_STATUS_READY) == 0);
+    } while ((status & (NAND_STATUS_READY * 0x01010101)) == 0);
 
     return 0;
 }
@@ -177,10 +180,16 @@ unsigned int nand_ll_read_id(int bank)
     /* clear read FIFO */
     FMCTRL1 = FMCTRL1_ClearRFIFO;
     
+#ifdef ROCKBOX_BIG_ENDIAN
+    /* the first byte arrives in the most significant lane; return it in the
+       least significant byte like the Nano 2G driver does (maker in bits 0-7) */
+    nand_id = swap32(nand_id);
+#endif
     return nand_id;    
 }
 
 /*  Reads 'len' raw bytes (no ECC) of a page, starting at column 'col'.
+    'len' should be a multiple of 4.
     This assumes a large page device (2 column + 3 row address cycles).
     It is slow (programmed I/O, 4 bytes per transfer) and only intended
     for probing the flash layout. */
@@ -220,6 +229,10 @@ int nand_ll_read_raw(int bank, unsigned int page, unsigned int col,
         if (nand_read_word(count, &word)) {
             return -6;
         }
+#ifdef ROCKBOX_BIG_ENDIAN
+        /* first byte in the most significant lane (confirmed by the ID) */
+        word = swap32(word);
+#endif
         buf[i] = word & 0xFF;
         if (count > 1) buf[i + 1] = (word >> 8) & 0xFF;
         if (count > 2) buf[i + 2] = (word >> 16) & 0xFF;

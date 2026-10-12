@@ -1,0 +1,2 @@
+# Samsung S5L8700 boot ROM in DFU mode (YP-S3, Meizu M6SL): allow logged-in users
+SUBSYSTEM=="usb", ATTR{idVendor}=="0419", ATTR{idProduct}=="0145", MODE="0666", TAG+="uaccess"

@@ -65,6 +65,108 @@ static inline void delay(unsigned int duration)
     for(i=0;i<duration;i++);
 }
 
+/* last start-up/loop step reached, shown by the crash dump */
+volatile unsigned int dbg_stage;
+
+/* Hang detector: a tick task that prints the current step on the bottom
+   line of the screen if it has not changed for two seconds. */
+static void dbg_tick(void)
+{
+    static unsigned int last_stage = 0xFFFFFFFF;
+    static int count = 0;
+    char str[32];
+
+    if (dbg_stage != last_stage) {
+        last_stage = dbg_stage;
+        count = 0;
+        return;
+    }
+    if (++count == 2 * HZ) {
+        count = 0;
+        snprintf(str, sizeof(str), "stuck at step %u", last_stage);
+        lcd_puts(0, 25, str);
+        lcd_update_rect(0, 0, LCD_WIDTH, LCD_HEIGHT);
+    }
+}
+
+/* Show a progress number (0-7) on the three button LEDs, so that a hang or
+   crash during start-up can be located without a working screen.
+   bit 0 = menu/back LED, bit 1 = cursor LED, bit 2 = middle LED */
+static void stage(unsigned int n)
+{
+    dbg_stage = n;
+    PCON3 = (PCON3 & ~0x0000FF00) | 0x00001100;
+    PCON4 = (PCON4 & ~0x00000F00) | 0x00000100;
+    PDAT3 = (PDAT3 & ~0x0C) | ((n & 1) ? 0x04 : 0) | ((n & 2) ? 0x08 : 0);
+    PDAT4 = (PDAT4 & ~0x04) | ((n & 4) ? 0x04 : 0);
+}
+
+/* Crash dump: the stock panic screen only shows the faulting pc, which is
+   useless when the CPU ran off into the weeds. This replaces the (weak)
+   SWI and reserved vector handlers and prints the registers instead. */
+extern unsigned char _fiqstackend[];
+
+void software_int_handler(void) __attribute__((naked));
+void reserved_handler(void) __attribute__((naked, alias("software_int_handler")));
+
+void software_int_handler(void)
+{
+    asm volatile(
+        "stmdb  sp, {r0-r12}        \n"    /* registers go below the svc sp */
+        "mov    r0, sp              \n"    /* r0 = svc sp */
+        "mrs    r1, spsr            \n"    /* r1 = interrupted cpsr */
+        "mov    r2, lr              \n"    /* r2 = lr */
+        "msr    cpsr_c, #0xd2       \n"    /* IRQ mode */
+        "mov    r3, sp              \n"    /* r3 = irq sp */
+        "msr    cpsr_c, #0xd3       \n"    /* back to SVC mode */
+        "ldr    sp, =_fiqstackend   \n"
+        "b      crash_dump          \n"
+    );
+}
+
+static void dump_words(int *line, const char *label, const unsigned int *p)
+{
+    char str[40];
+    int i;
+
+    snprintf(str, sizeof(str), "%s %08X", label, (unsigned)p);
+    lcd_puts(0, (*line)++, str);
+    for (i = 0; i < 12; i += 3) {
+        snprintf(str, sizeof(str), "%08X %08X %08X", p[i], p[i + 1], p[i + 2]);
+        lcd_puts(0, (*line)++, str);
+    }
+}
+
+void crash_dump(unsigned int svc_sp, unsigned int spsr, unsigned int lr,
+                unsigned int irq_sp) __attribute__((noreturn, used));
+void crash_dump(unsigned int svc_sp, unsigned int spsr, unsigned int lr,
+                unsigned int irq_sp)
+{
+    char str[40];
+    const unsigned int *r = (const unsigned int *)(svc_sp - 13 * 4);
+    int line = 0, i;
+
+    lcd_clear_display();
+    snprintf(str, sizeof(str), "SWI lr %08X spsr %08X", lr, spsr);
+    lcd_puts(0, line++, str);
+    snprintf(str, sizeof(str), "step %u", dbg_stage);
+    lcd_puts(0, line++, str);
+    for (i = 0; i < 12; i += 3) {
+        snprintf(str, sizeof(str), "%08X %08X %08X", r[i], r[i + 1], r[i + 2]);
+        lcd_puts(0, line++, str);
+    }
+    snprintf(str, sizeof(str), "r12 %08X", r[12]);
+    lcd_puts(0, line++, str);
+    if ((svc_sp >> 24) == 0x22) {
+        dump_words(&line, "svc sp", (const unsigned int *)svc_sp);
+    }
+    if ((irq_sp >> 24) == 0x22) {
+        dump_words(&line, "irq frame", (const unsigned int *)(irq_sp - 48));
+    }
+    lcd_update();
+    while (1);
+}
+
 // forward declaration
 static int rds_decode(int line, struct si4700_dbg_info *nfo);
 int lcd_yps3_type(void);
@@ -364,7 +466,9 @@ void main(void)
     INTMSK = 0;
     
     // start with all GPIOs as input
-    PCON0 = 0;
+    /* but keep P0.0 (backlight) and P0.1 (stay powered) as outputs, high */
+    PCON0 = 0x5;
+    PDAT0 |= 0x3;
     PCON1 = 0;
     PCON2 = 0;
     PCON3 = 0;
@@ -372,19 +476,40 @@ void main(void)
     PCON5 = 0;
     PCON6 = 0;
     PCON7 = 0;
-    
+    stage(1);
+
     system_init();
+    stage(2);
     kernel_init();
     
-    asm volatile("msr cpsr_c, #0x13\n\t"); // enable interrupts
+    /* crt0 starts main in SYS mode on its own stack; switching to SVC mode
+       here (as this code did in 2009) moves main onto the IRQ stack, where
+       the first timer interrupt overwrites its return addresses */
+    enable_irq();
+    tick_add_task(dbg_tick);
+    stage(3);
 
     lcd_init();
+    stage(4);
     
     lcd_clear_display();
     lcd_bitmap(rockboxlogo, 0, 160, BMPWIDTH_rockboxlogo, BMPHEIGHT_rockboxlogo);
     lcd_update();
+    stage(5);
 
     power_init();
+    stage(6);
+
+    dbg_stage = 20;
+    i2c_init();
+    dbg_stage = 21;
+    fmradio_i2c_init();
+    dbg_stage = 22;
+    adc_init();
+    dbg_stage = 23;
+    backlight_hw_init();
+    dbg_stage = 24;
+    button_init_device();
 
     /* Blink the LED behind the middle button once for LCD type 1 and twice
        for type 2. Only type 2 has been tested, so if the screen stays blank
@@ -396,15 +521,11 @@ void main(void)
         PDAT4 &= ~(1 << 2);
         delay(LONG_DELAY * 60);
     }
-    
-    i2c_init();
-    fmradio_i2c_init();
-    adc_init();
-    backlight_hw_init();
-    button_init_device();
         
     // FM power
+    dbg_stage = 26;
     si4700_init();
+    dbg_stage = 27;
     tuner_power(true);
     si4700_set(RADIO_SLEEP, 0);
     si4700_set(RADIO_MUTE, 0);
@@ -414,6 +535,7 @@ void main(void)
     lcd_puts(0, 0, "Rockbox YP-S3 hardware test");
 
     // WM1800 codec configuration
+    dbg_stage = 28;
     wmcodec_write(0x0F, 0);     // codec reset
     wmcodec_write(0x19, 0xF0);  // pwr mgmt1: VMID = 1, VREF, AINL, AINR
     wmcodec_write(0x1A, 0x60);  // pwr mgmt2: LOUT1, ROUT1
@@ -425,18 +547,24 @@ void main(void)
     
     // enable audio
     PCON5 = (PCON5 & ~0x0000000F) | 0x00000001;
+    dbg_stage = 29;
     PDAT5 |= 1;
 
+    dbg_stage = 30;
     nand_ll_init();
     for (i = 0; i < 4; i++) {
         nand_ll_reset(i);
         nand_ids[i] = nand_ll_read_id(i);
     }
 
+    /* get rid of the logo and of start-up messages */
+    lcd_clear_display();
+
     while (true)
     {
         line = 1;
 
+        dbg_stage = 41;
 #if 1   /* enable to see GPIOs */
         snprintf(mystring, 64, "%02X %02X %02X %02X %02X %02X %02X %02X",
             (unsigned)PDAT0, (unsigned)PDAT1, (unsigned)PDAT2, (unsigned)PDAT3,
@@ -444,6 +572,7 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif
 
+        dbg_stage = 42;
 #if 1   /* enable this to see info about the RTC */
         rtc_read_datetime(&dt);
         snprintf(mystring, 64, "RTC: %04d-%02d-%02d %02d:%02d:%02d",
@@ -452,6 +581,7 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif 
 
+        dbg_stage = 43;
 #if 1   /* enable this to see radio debug info */
         button = button_read_device();
         if (button & BUTTON_RIGHT) {
@@ -465,6 +595,7 @@ void main(void)
         snprintf(mystring, 64, "FM frequency: %9d", fm_frequency);
         lcd_puts(0, line++, mystring);
 
+        dbg_stage = 44;
         si4700_dbg_info(&si4700_info);
         col = snprintf(mystring, 64, "FM: ");
         for (i = 0; i < 16; i++) {
@@ -474,9 +605,11 @@ void main(void)
                 col = 4;
             }
         }
+        dbg_stage = 45;
         line = rds_decode(line, &si4700_info);
 #endif
 
+        dbg_stage = 46;
 #if 1   /* volume control with up/down keys */
         button = button_read_device();
         if (button & BUTTON_UP) {
@@ -497,6 +630,7 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif
 
+        dbg_stage = 47;
 #if 1   /* enable this to see ADC info */
         snprintf(mystring, 64, "ADC: %04X %04X %04X %04X", 
             adc_read(0), adc_read(1), adc_read(2), adc_read(3));
@@ -506,6 +640,7 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif
 
+        dbg_stage = 48;
 #if 1   /* enable this so see USB info */
         snprintf(mystring, 64, "CLK %08X CLK2 %08X", (unsigned)CLKCON, (unsigned)CLKCON2);
         lcd_puts(0, line++, mystring);
@@ -523,6 +658,7 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif
 
+        dbg_stage = 49;
 #if 1   /* button lights controlled by keypad */
         button = button_read_device();
         if (button & (BUTTON_UP | BUTTON_DOWN | BUTTON_LEFT | BUTTON_RIGHT)) {
@@ -545,6 +681,7 @@ void main(void)
         }
 #endif
 
+        dbg_stage = 50;
 #if 1   /* backlight brightness controlled by up/down keys */
         button = button_read_device();
         if (button & BUTTON_MENU) {
@@ -563,6 +700,7 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif
 
+        dbg_stage = 51;
 #if 1   /* SELECT opens the NAND probe */
         button = button_read_device();
         if (button & BUTTON_SELECT) {
@@ -570,6 +708,7 @@ void main(void)
         }
 #endif
 
+        dbg_stage = 52;
 #if 1   /* power off using power button */
         button = button_read_device();
         if (button & BUTTON_POWER) {
@@ -577,12 +716,14 @@ void main(void)
         }
 #endif
 
+        dbg_stage = 53;
 #if 1   /* button info */
         snprintf(mystring, 64, "BUTTONS %08X, %s", button_read_device(),
                  headphones_inserted() ? "HP" : "hp");
         lcd_puts(0, line++, mystring);
 #endif
 
+        dbg_stage = 54;
 #if 1   /* NAND debug */
         snprintf(mystring, 64, "NAND ID: %08X %08X", nand_ids[0], nand_ids[1]);
         lcd_puts(0, line++, mystring);
@@ -590,6 +731,7 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif
 
+        dbg_stage = 55;
 #if 1
         snprintf(mystring, 64, "TIMER A:%08X B:%08X", (unsigned)TACNT, (unsigned)TBCNT);
         lcd_puts(0, line++, mystring);
@@ -597,6 +739,7 @@ void main(void)
         lcd_puts(0, line++, mystring);
 #endif
 
+        dbg_stage = 56;
         lcd_update();
     }
 }
