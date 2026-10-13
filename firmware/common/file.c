@@ -466,6 +466,14 @@ static int open_internal_inner1(const char *path, int oflag,
 
     int rc;
 
+#ifdef STORAGE_READ_ONLY
+    /* the storage driver can't write yet: fail cleanly up front */
+    if (oflag & (O_ACCMODE | O_CREAT | O_TRUNC)) {
+        errno = EROFS;
+        return -1;
+    }
+#endif
+
     struct filestr_desc *file;
     int fildes = alloc_filestr(&file);
     if (fildes < 0)
@@ -989,6 +997,10 @@ file_error:
 int rbfs_remove(const char *path)
 {
     DEBUGF("remove(path=\"%s\")\n", path);
+#ifdef STORAGE_READ_ONLY
+    errno = EROFS;
+    return -1;
+#endif
 
     file_internal_lock_WRITER();
     int rc = remove_stream_internal(path, NULL, FF_FILE);
@@ -1000,6 +1012,10 @@ int rbfs_remove(const char *path)
 int rbfs_rename(const char *old, const char *new)
 {
     DEBUGF("rename(old=\"%s\",new=\"%s\")\n", old, new);
+#ifdef STORAGE_READ_ONLY
+    errno = EROFS;
+    return -1;
+#endif
 
     int rc, open1rc = -1, open2rc = -1;
     struct filestr_base oldstr, newstr;

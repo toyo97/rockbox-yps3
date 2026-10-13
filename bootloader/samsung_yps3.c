@@ -543,6 +543,11 @@ static void try_boot(void)
     char str[48];
     int rc;
 
+#ifdef YPS3_NO_AUTOBOOT
+    /* development build: wait for an image uploaded over USB instead */
+    bootlog("load: skipped (development bootloader)");
+    return;
+#endif
     if (button_read_device() & BUTTON_MAIN) {
         bootlog("key held, not booting");
         return;

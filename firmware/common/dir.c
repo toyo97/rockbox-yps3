@@ -235,6 +235,10 @@ void rbfs_rewinddir(DIR *dirp)
 int rbfs_mkdir(const char *path)
 {
     DEBUGF("mkdir(path=\"%s\")\n", path);
+#ifdef STORAGE_READ_ONLY
+    errno = EROFS;
+    return -1;
+#endif
 
     int rc;
 
@@ -272,6 +276,10 @@ file_error:
 int rbfs_rmdir(const char *name)
 {
     DEBUGF("rmdir(name=\"%s\")\n", name);
+#ifdef STORAGE_READ_ONLY
+    errno = EROFS;
+    return -1;
+#endif
 
     if (name)
     {
