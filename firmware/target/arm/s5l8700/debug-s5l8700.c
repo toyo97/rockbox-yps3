@@ -181,6 +181,27 @@ bool dbg_hw_info(void)
         _DEBUG_PRINTF("P5: %02x (charging %s)", (unsigned)PDAT5,
                       charging_state() ? "yes" : "no");
         _DEBUG_PRINTF("CPU: %ld MHz", cpu_frequency / 1000000);
+#ifdef HAVE_USBSTACK
+        {
+            extern unsigned long usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups,
+                usb_dbg_inits, usb_dbg_last_ssr, usb_dbg_last_ep0sr;
+            extern int usb_dbg_variant;
+            _DEBUG_PRINTF("PHY variant %d (up: next, then replug)",
+                          usb_dbg_variant);
+            _DEBUG_PRINTF("USB init %lu irq %lu rst %lu setup %lu", usb_dbg_inits,
+                          usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups);
+            _DEBUG_PRINTF("SSR %04lx/%04lx EP0SR %02lx/%02lx",
+                          usb_dbg_last_ssr, (unsigned long)USB_SSR & 0xffff,
+                          usb_dbg_last_ep0sr, (unsigned long)USB_EP0SR & 0xff);
+            _DEBUG_PRINTF("EIR %03lx EIER %03lx SCR %04lx INTMSK %08lx",
+                          (unsigned long)USB_EIR & 0x1ff,
+                          (unsigned long)USB_EIER & 0x1ff,
+                          (unsigned long)USB_SCR & 0xffff,
+                          (unsigned long)INTMSK);
+            _DEBUG_PRINTF("SRCPND %08lx PWRCON %08lx", (unsigned long)SRCPND,
+                          (unsigned long)PWRCON);
+        }
+#endif
         _DEBUG_PRINTF("P5.2 %d P5.3 %d (left/right toggle)",
                       (PDAT5 >> 2) & 1, (PDAT5 >> 3) & 1);
 #else
@@ -211,6 +232,14 @@ bool dbg_hw_info(void)
             case BUTTON_RIGHT:
                 PDAT5 ^= (1 << 3);
                 break;
+#ifdef HAVE_USBSTACK
+            case BUTTON_UP:
+            {
+                extern int usb_dbg_variant;
+                usb_dbg_variant = (usb_dbg_variant + 1) % 3;
+                break;
+            }
+#endif
 #endif
             case DEBUG_CANCEL:
             case BUTTON_REL:

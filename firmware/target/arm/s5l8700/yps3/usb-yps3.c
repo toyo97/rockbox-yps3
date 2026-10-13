@@ -95,6 +95,11 @@ static struct ep_state ep_states[USB_NUM_ENDPOINTS][2];
 static uint16_t ep0_wlength;
 static bool high_speed;
 
+/* shown on the debug screen */
+unsigned long usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups, usb_dbg_inits;
+unsigned long usb_dbg_last_ssr, usb_dbg_last_ep0sr;
+int usb_dbg_variant;
+
 struct usb_drv_ep_spec usb_drv_ep_specs[USB_NUM_ENDPOINTS] = {
     [0] = {{USB_ENDPOINT_XFER_CONTROL, USB_ENDPOINT_XFER_CONTROL}},
     [1] = {{USB_ENDPOINT_TYPE_NONE, USB_ENDPOINT_TYPE_ANY}},
@@ -189,6 +194,7 @@ static void ep0_setup(void)
 
     fifo_read(0, s.b, 8, 8);
     USB_EP0SR = EP0SR_RX_SUCCESS;
+    usb_dbg_setups++;
 
     /* a transfer still in flight belongs to a request the host gave up */
     ep0_fail_transfers();
@@ -208,6 +214,7 @@ static void ep0_int(void)
 
     USB_IR = 0;
     sr = USB_EP0SR;
+    usb_dbg_last_ep0sr = sr;
 
     if (sr & EP0SR_STALL) {
         USB_EP0CR &= ~EP0CR_STALL;
@@ -330,6 +337,7 @@ static void bus_reset(void)
 {
     int n;
 
+    usb_dbg_resets++;
     USB_EDR = 0xAA;             /* odd endpoints IN */
     USB_TR = 0;
     USB_SCR = SCR_DTZIEN_EN | SCR_RRD_EN | SCR_SUS_EN | SCR_RST_EN;
@@ -351,6 +359,9 @@ void INT_USB_FUNC(void)
     unsigned int ssr = USB_SSR;
     unsigned int eir = USB_EIR & 0x1ff;
     int n;
+
+    usb_dbg_irqs++;
+    usb_dbg_last_ssr = ssr;
 
     if (ssr & SSR_ANY) {
         USB_SSR = ssr & SSR_ANY;
@@ -393,6 +404,7 @@ void usb_drv_init(void)
 {
     int n;
 
+    usb_dbg_inits++;
     for (n = 0; n < USB_NUM_ENDPOINTS; n++) {
         memset(ep_states[n], 0, sizeof(ep_states[n]));
         semaphore_init(&ep_states[n][DIR_OUT].complete, 1, 0);
@@ -403,15 +415,26 @@ void usb_drv_init(void)
     PWRCON &= ~(1 << 15);
 
     /* USB PHY power-up and reset, like the original firmware: after the
-       cable was pulled, the PHY the boot ROM set up doesn't answer */
-    PWRCON &= ~(1 << 14);
-    USB_PHY_REG(0x10) = 4;
-    USB_PHY_REG(0x04) = 0;
-    USB_PHY_REG(0x00) = 0x10;
-    USB_PHY_REG(0x08) |= 1;
-    sleep(HZ / 100 + 1);
-    USB_PHY_REG(0x08) &= ~1;
-    sleep(HZ / 100 + 1);
+       cable was pulled, the PHY the boot ROM set up doesn't answer.
+       usb_dbg_variant (debug screen): 0 = this, 1 = exactly the original
+       firmware's sequence (PWRCON bit 14 ends up set), 2 = PHY untouched */
+    if (usb_dbg_variant != 2) {
+        PWRCON &= ~(1 << 14);
+        USB_PHY_REG(0x10) = 4;
+        USB_PHY_REG(0x04) = 0;
+        USB_PHY_REG(0x00) = 0x10;
+        USB_PHY_REG(0x08) |= 1;
+        sleep(HZ / 100 + 1);
+        USB_PHY_REG(0x08) &= ~1;
+        sleep(HZ / 100 + 1);
+    }
+    if (usb_dbg_variant == 1) {
+        PWRCON |= (1 << 14);
+        PWRCON &= ~(1 << 14);
+        USB_PHY_REG(0x00) = 0x10;
+        USB_PHY_REG(0x04) = 0xff;
+        PWRCON |= (1 << 14);
+    }
 
     high_speed = (USB_SSR & SSR_HSP) != 0;
     USB_EDR = 0xAA;
