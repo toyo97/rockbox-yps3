@@ -146,12 +146,20 @@ void irq_handler(void)
                     "sub   sp, sp, #8           \n"); /* Reserve stack */
 
     int irq_no = INTOFFSET;
-    
+
+#ifdef SAMSUNG_YPS3
+    /* acknowledge first, then handle: an event raised while the handler
+       runs is not lost (the USB controller then waits forever) */
+    SRCPND = (1 << irq_no);
+    INTPND = INTPND;
+    irqvector[irq_no]();
+#else
     irqvector[irq_no]();
 
     /* clear interrupt */
     SRCPND = (1 << irq_no);
     INTPND = INTPND;
+#endif
     
     asm volatile(   "add   sp, sp, #8           \n"   /* Cleanup stack   */
                     "ldmfd sp!, {r0-r7, ip, lr} \n"   /* Restore context */

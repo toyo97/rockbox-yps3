@@ -406,18 +406,11 @@ static void bus_reset(void)
     usb_core_bus_reset();
 }
 
-void INT_USB_FUNC(void)
+static void usb_int_once(unsigned int ssr, unsigned int eir)
 {
-    unsigned int ssr = USB_SSR;
-    unsigned int eir = USB_EIR & 0x1ff;
-    unsigned int saved_ir = USB_IR;     /* the interrupted code's endpoint */
     int n;
 
-    usb_dbg_irqs++;
     usb_dbg_last_ssr = ssr;
-    if (!eir && !(ssr & SSR_ANY))
-        dbg_ev("?", ssr);
-
     if (ssr & SSR_ANY) {
         USB_SSR = ssr & SSR_ANY & ~SSR_RESET;
         if (ssr & SSR_SDE)
@@ -439,6 +432,32 @@ void INT_USB_FUNC(void)
         else
             ep_out_drain(n);
     }
+}
+
+void INT_USB_FUNC(void)
+{
+    unsigned int saved_ir = USB_IR;     /* the interrupted code's endpoint */
+    unsigned int ssr, eir;
+    int rounds = 0;
+
+    /* Clear the pending interrupt first, like the original firmware: the
+       dispatcher clears it after the handler returns, which loses an event
+       that came in meanwhile, and the controller then waits for good. */
+    SRCPND = (1 << 16);
+    INTPND = (1 << 16);
+    usb_dbg_irqs++;
+
+    do {
+        ssr = USB_SSR;
+        eir = USB_EIR & 0x1ff;
+        if (!eir && !(ssr & SSR_ANY)) {
+            if (rounds == 0)
+                dbg_ev("?", ssr);
+            break;
+        }
+        usb_int_once(ssr, eir);
+    } while (++rounds < 8);
+
     USB_IR = saved_ir;
 }
 
