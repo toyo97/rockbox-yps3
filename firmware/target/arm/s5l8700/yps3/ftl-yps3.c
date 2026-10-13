@@ -471,7 +471,8 @@ void ftl_ecc_selftest(void (*logf_fn)(const char *fmt, ...), int pages)
    Read only: validates the encoder needed for writing. */
 void ftl_ecc_encode_selftest(void (*logf_fn)(const char *fmt, ...), int pages)
 {
-    static uint8_t meta[32] __attribute__((aligned(16)));
+    static uint8_t meta[SECTOR_SIZE] __attribute__((aligned(16)));
+    unsigned char mfirst[9] = {0}, mstored[9] = {0};
     unsigned char e[9];
     int n = 0, s0 = 0, s1 = 0, nm = 0, m0 = 0, m1 = 0, p, s;
     unsigned char first[9] = {0}, firstgot[9] = {0};
@@ -485,12 +486,20 @@ void ftl_ecc_encode_selftest(void (*logf_fn)(const char *fmt, ...), int pages)
         unsigned int pblock = vfl_phys_block(0, vb * 2);
         if (raw_read(0, pblock, page, PAGE_SIZE, ecc_spare, sizeof(ecc_spare)))
             continue;
-        /* metadata: spare 12..31, its ECC at spare 2..10 */
-        memcpy(meta, &ecc_spare[12], 20);
+        /* metadata: spare 12..31, its ECC at spare 2..10; the engine may
+           read a whole 512 byte block: try 0xFF and 0x00 padding */
         nm++;
+        if (nm == 1)
+            memcpy(mstored, &ecc_spare[2], 9);
+        memset(meta, 0xff, sizeof(meta));
+        memcpy(meta, &ecc_spare[12], 20);
         if (!nand_ll_ecc_encode(meta, e, 0) && !memcmp(e, &ecc_spare[2], 9))
             m0++;
-        if (!nand_ll_ecc_encode(meta, e, 1) && !memcmp(e, &ecc_spare[2], 9))
+        if (nm == 1)
+            memcpy(mfirst, e, 9);
+        memset(meta, 0x00, sizeof(meta));
+        memcpy(meta, &ecc_spare[12], 20);
+        if (!nand_ll_ecc_encode(meta, e, 0) && !memcmp(e, &ecc_spare[2], 9))
             m1++;
         for (s = 0; s < 8; s++) {
             if (raw_read(0, pblock, page, s * SECTOR_SIZE, ecc_sector,
@@ -510,11 +519,12 @@ void ftl_ecc_encode_selftest(void (*logf_fn)(const char *fmt, ...), int pages)
             }
         }
     }
-    logf_fn("ecc enc: sectors %d sel0 %d sel1 %d; meta %d sel0 %d sel1 %d",
+    logf_fn("ecc enc: sectors %d sel0 %d sel1 %d; meta %d padFF %d pad00 %d",
             n, s0, s1, nm, m0, m1);
-    logf_fn("ecc enc first: stored %02x%02x%02x%02x got %02x%02x%02x%02x",
-            first[0], first[1], first[2], first[3],
-            firstgot[0], firstgot[1], firstgot[2], firstgot[3]);
+    logf_fn("ecc enc meta: stored %02x%02x%02x%02x%02x got %02x%02x%02x%02x%02x",
+            mstored[0], mstored[1], mstored[2], mstored[3], mstored[4],
+            mfirst[0], mfirst[1], mfirst[2], mfirst[3], mfirst[4]);
+    (void)first; (void)firstgot;
 }
 
 /* Compares DMA and programmed I/O reads of some pages and enables DMA if
