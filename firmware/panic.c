@@ -35,6 +35,9 @@
 #ifdef HAVE_RB_BACKTRACE
 #include "gcc_extensions.h"
 #include "backtrace.h"
+#ifdef SAMSUNG_YPS3
+#include "backlight-target.h"
+#endif
 #endif
 
 #if (defined(CPU_MIPS) && (CONFIG_PLATFORM & PLATFORM_NATIVE))
@@ -106,6 +109,9 @@ void panicf( const char *fmt, ...)
 #endif
 
     lcd_clear_display();
+#ifdef SAMSUNG_YPS3
+    backlight_hw_on();  /* the panic may happen with the backlight off */
+#endif
     lcd_setfont(FONT_SYSFIXED);
     lcd_puts(1, y++, (unsigned char *) "*PANIC* (" RBVERSION ")");
     {

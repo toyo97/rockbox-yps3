@@ -65,7 +65,7 @@ unsigned int power_input_status(void)
 {
     /* check USB power on P1.1 */
     if (PDAT1 & (1 << 1)) {
-        return POWER_INPUT_USB;
+        return POWER_INPUT_USB_CHARGER;   /* it charges from USB */
     }
     
     return POWER_INPUT_NONE;
