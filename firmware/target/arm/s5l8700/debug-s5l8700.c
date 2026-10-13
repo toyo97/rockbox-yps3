@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include "config.h"
 #include "adc.h"
+#include "usb.h"
 #include "power.h"
 #include "system.h"
 #include "kernel.h"
@@ -230,6 +231,12 @@ bool dbg_hw_info(void)
                 break;
 #endif
 
+#if defined(SAMSUNG_YPS3) && defined(HAVE_USBSTACK)
+            case SYS_USB_CONNECTED:
+                /* stay on this screen while in USB mode, to watch it */
+                usb_acknowledge(SYS_USB_CONNECTED_ACK, button_get_data());
+                break;
+#endif
 #ifdef SAMSUNG_YPS3
             case BUTTON_LEFT:
                 PDAT5 ^= (1 << 2);
