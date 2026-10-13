@@ -432,9 +432,22 @@ static void usbdump_mode(void)
     lcd_update();
 
     while (true) {
+        unsigned long exec;
+
         usbdump_poll();
         if (usbdump_exit_requested()) {
             break;
+        }
+        exec = usbdump_exec_requested();
+        if (exec) {
+            /* let the status stage of the request complete */
+            long t = current_tick + HZ / 10;
+            while (TIME_BEFORE(current_tick, t)) {
+                usbdump_poll();
+            }
+            disable_irq();
+            commit_discard_idcache();
+            ((void (*)(void))exec)();
         }
         if (TIME_AFTER(current_tick, next_update)) {
             next_update = current_tick + HZ / 2;
@@ -465,6 +478,8 @@ static void fs_test(void)
     snprintf(str, sizeof(str), "storage_init %d, %lu sectors", rc,
              (unsigned long)ftl_sector_count());
     lcd_puts(0, line++, str);
+    bootlog("%s", str);
+    ftl_debug_log(bootlog);
     lcd_update();
     if (rc == 0) {
         filesystem_init();
@@ -472,6 +487,7 @@ static void fs_test(void)
         snprintf(str, sizeof(str), "mounted %d, %ld ms", rc,
                  (current_tick - t0) * 1000 / HZ);
         lcd_puts(0, line++, str);
+        bootlog("%s", str);
         if (rc > 0) {
             DIR *dir = opendir("/");
             struct dirent *entry;
@@ -480,16 +496,15 @@ static void fs_test(void)
                 snprintf(str, sizeof(str), "%s%s", entry->d_name,
                          (info.attribute & ATTR_DIRECTORY) ? "/" : "");
                 lcd_puts(1, line++, str);
+                bootlog("  %s", str);
             }
             if (dir) {
                 closedir(dir);
             }
         }
     }
-    lcd_puts(0, 26, "press any key");
     lcd_update();
-    button_wait_press();
-    while (button_read_device() & BUTTON_MAIN);
+    sleep(3 * HZ);
     lcd_clear_display();
 }
 
@@ -693,6 +708,7 @@ void main(void)
     sdram_init();
     sdram_mb = sdram_test();
     usbdump_sdram_mb = sdram_mb;
+    bootlog("sdram %d MB", sdram_mb);
 
     dbg_stage = 32;
     fs_test();

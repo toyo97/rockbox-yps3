@@ -22,7 +22,12 @@ void usbdump_init(const unsigned int *ids);
 /* handles one pending control request, returns 1 if there was one */
 int usbdump_poll(void);
 int usbdump_exit_requested(void);
+/* address to jump to, requested by the PC, or 0 */
+unsigned long usbdump_exec_requested(void);
 extern unsigned int usbdump_requests;
 extern int usbdump_sdram_mb;
+
+/* start-up log, readable over USB with the info request */
+void bootlog(const char *fmt, ...);
 
 #endif

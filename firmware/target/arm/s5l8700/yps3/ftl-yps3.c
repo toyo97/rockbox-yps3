@@ -129,7 +129,8 @@ static unsigned int vfl_phys_block(int die, unsigned int pblock)
 {
     unsigned int i;
     for (i = 0; i < vfl_remap_count[die]; i++) {
-        if (vfl_remap[die][i] == pblock) {
+        /* the list is padded with 0, block 0 is never remapped */
+        if (vfl_remap[die][i] == pblock && pblock != 0) {
             return VFL_RESERVED_BASE + i;
         }
     }
@@ -154,7 +155,12 @@ static int vfl_read(uint32_t vpn, unsigned int offset, void *dst,
 /* spare bytes 0-31 of plane 0 of a virtual page */
 static int vfl_read_spare(uint32_t vpn, uint8_t *dst)
 {
-    return vfl_read(vpn, PAGE_SIZE, dst, 32) == 0 ? 0 : -1;
+    unsigned int vblock = vpn / VPAGES_PER_VBLOCK;
+    unsigned int rest = vpn % VPAGES_PER_VBLOCK;
+    int die = rest & 1;
+
+    return raw_read(die, vfl_phys_block(die, vblock * 2), rest >> 1,
+                    PAGE_SIZE, dst, 32) == 0 ? 0 : -1;
 }
 
 static bool spare_empty(const uint8_t *sp)
@@ -333,6 +339,8 @@ static int ftl_open(void)
     return 0;
 }
 
+static int ftl_init_rc;
+
 uint32_t ftl_init(void)
 {
     int rc;
@@ -342,14 +350,31 @@ uint32_t ftl_init(void)
 
     rc = vfl_open();
     if (rc) {
+        ftl_init_rc = rc;
         return 1;
     }
     rc = ftl_open();
     if (rc) {
+        ftl_init_rc = rc;
         return 2;
     }
     ftl_ok = true;
     return 0;
+}
+
+void ftl_debug_log(void (*logf_fn)(const char *fmt, ...))
+{
+    int i;
+    logf_fn("ftl rc %d ok %d lblocks %lu", ftl_init_rc, ftl_ok,
+            (unsigned long)ftl_lblocks);
+    for (i = 0; i < DIES; i++) {
+        logf_fn("vfl die %d counter %lx meta0 %x remap %d", i,
+                (unsigned long)vfl_counter[i], vfl_meta[i][0],
+                vfl_remap_count[i]);
+    }
+    logf_fn("map %x %x %x %x logs %d first %x/%x", ftl_map[0][0],
+            ftl_map[1][0], ftl_map[2][0], ftl_map[3][0], ftl_nlogs,
+            ftl_logs[0].vblock, ftl_logs[0].lbn);
 }
 
 uint32_t ftl_sector_count(void)

@@ -38,6 +38,8 @@ import time
 VID, PID = 0x0419, 0x0145
 REQ_INFO, REQ_READ_PAGE, REQ_READ_IDS, REQ_READ_MEM, REQ_EXIT = (
     0x50, 0x51, 0x52, 0x53, 0x5F)
+REQ_WRITE_MEM, REQ_EXEC = 0x54, 0x55
+LOAD_ADDR = 0x08100000   # SDRAM, clear of the bootloader's buffers
 PAGE_DATA, PAGE_SPARE = 4096, 128
 PAGE_TOTAL = PAGE_DATA + PAGE_SPARE
 PAGES_PER_BLOCK = 128
@@ -80,7 +82,7 @@ def hexdump(data, base=0):
 
 
 def cmd_info(dev, args):
-    print(vendor_in(dev, REQ_INFO, 0, 0, 64).decode(errors="replace"))
+    print(vendor_in(dev, REQ_INFO, 0, 0, 4096).decode(errors="replace").rstrip("\0"))
     ids = vendor_in(dev, REQ_READ_IDS, 0, 0, 16)
     for bank in range(4):
         print(f"bank {bank}: {ids[4 * bank:4 * bank + 4].hex(' ')}")
@@ -134,6 +136,33 @@ def cmd_mem(dev, args):
     hexdump(out, args.addr)
 
 
+def vendor_out(dev, req, value, index, data):
+    return dev.ctrl_transfer(0x40, req, value, index, data, TIMEOUT_MS)
+
+
+def cmd_load(dev, args):
+    """upload an image (e.g. build-yps3/rockboot.ebn) to SDRAM and run it.
+    Only works when the running bootloader has the SDRAM set up."""
+    with open(args.image, "rb") as f:
+        img = f.read()
+    addr = LOAD_ADDR
+    for off in range(0, len(img), 4096):
+        chunk = img[off:off + 4096]
+        a = addr + off
+        vendor_out(dev, REQ_WRITE_MEM, a & 0xFFFF, a >> 16, chunk)
+    # verify
+    back = b""
+    while len(back) < len(img):
+        a = addr + len(back)
+        n = min(4096, len(img) - len(back))
+        back += vendor_in(dev, REQ_READ_MEM, a & 0xFFFF, a >> 16, n)
+    if back != img:
+        bad = next(i for i in range(len(img)) if img[i] != back[i])
+        sys.exit(f"verify failed at offset {bad:#x}")
+    print(f"uploaded {len(img)} bytes to {addr:#x}, verified, starting")
+    vendor_out(dev, REQ_EXEC, addr & 0xFFFF, addr >> 16, b"")
+
+
 def cmd_exit(dev, args):
     vendor_in(dev, REQ_EXIT, 0, 0, 0)
 
@@ -158,10 +187,13 @@ def main():
     s.add_argument("addr", type=lambda x: int(x, 0))
     s.add_argument("length", type=lambda x: int(x, 0))
     sub.add_parser("exit")
+    s = sub.add_parser("load")
+    s.add_argument("image")
     args = p.parse_args()
     dev = open_device()
     {"info": cmd_info, "page": cmd_page, "dump": cmd_dump,
-     "spares": cmd_spares, "mem": cmd_mem, "exit": cmd_exit}[args.cmd](dev, args)
+     "spares": cmd_spares, "mem": cmd_mem, "exit": cmd_exit,
+     "load": cmd_load}[args.cmd](dev, args)
 
 
 if __name__ == "__main__":

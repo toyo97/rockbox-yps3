@@ -30,6 +30,7 @@
 */
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include "config.h"
 #include "system.h"
@@ -58,6 +59,11 @@
 #define REQ_READ_MEM        0x53    /* wValue | wIndex << 16 = address */
 #define REQ_EXIT            0x5F    /* leave dump mode */
 
+/* vendor OUT requests (bmRequestType 0x40), for development */
+#define REQ_WRITE_MEM       0x54    /* data -> wValue | wIndex << 16 */
+#define REQ_EXEC            0x55    /* jump to wValue | wIndex << 16, after
+                                       the status stage */
+
 #define NAND_PAGE_TOTAL     (4096 + 128)
 
 /* in IRAM: the USB reader must work even if the SDRAM doesn't */
@@ -69,8 +75,34 @@ static const unsigned int *nand_ids;
 static int lanes_swapped = -1;
 
 unsigned int usbdump_requests;
+
+static char bootlog_buf[2048];
+static int bootlog_len;
+
+void bootlog(const char *fmt, ...)
+{
+    va_list ap;
+    int n;
+
+    if (bootlog_len >= (int)sizeof(bootlog_buf) - 2) {
+        return;
+    }
+    va_start(ap, fmt);
+    n = vsnprintf(bootlog_buf + bootlog_len, sizeof(bootlog_buf) - bootlog_len - 1,
+                  fmt, ap);
+    va_end(ap);
+    if (n > 0) {
+        bootlog_len += n;
+        if (bootlog_len > (int)sizeof(bootlog_buf) - 2) {
+            bootlog_len = sizeof(bootlog_buf) - 2;
+        }
+        bootlog_buf[bootlog_len++] = '\n';
+        bootlog_buf[bootlog_len] = '\0';
+    }
+}
 int usbdump_sdram_mb = -1;
 static int exit_requested;
+static unsigned long exec_addr;
 
 static const unsigned char device_desc[18] = {
     18, 1,              /* bLength, DEVICE */
@@ -185,6 +217,44 @@ static void ep0_send(const unsigned char *data, unsigned int len,
     }
 }
 
+/* data stage of an OUT control transfer */
+static void ep0_receive(unsigned char *dst, unsigned int len)
+{
+    unsigned int got = 0;
+
+    USB_IR = 0;
+    while (got < len) {
+        long timeout = current_tick + HZ;
+        unsigned int count, i, n;
+
+        while (!(USB_EP0SR & EP0SR_RX_SUCCESS)) {
+            if (TIME_AFTER(current_tick, timeout)) {
+                return;
+            }
+        }
+        count = USB_BRCR;
+        n = len - got;
+        if (n > count * 2) {
+            n = count * 2;
+        }
+        for (i = 0; i < count; i++) {
+            unsigned char b[2];
+            unpack_halfword(USB_EP0BR & 0xFFFF, b);
+            if (2 * i < n) {
+                dst[got + 2 * i] = b[0];
+            }
+            if (2 * i + 1 < n) {
+                dst[got + 2 * i + 1] = b[1];
+            }
+        }
+        USB_EP0SR = EP0SR_RX_SUCCESS;
+        got += n;
+        if (count * 2 < EP0_MAX_PACKET) {
+            break;  /* short packet */
+        }
+    }
+}
+
 static void handle_setup(void)
 {
     unsigned int h[4] = {0, 0, 0, 0};
@@ -193,6 +263,14 @@ static void handle_setup(void)
     unsigned int type, req, value, index, length;
 
     count = USB_BRCR;
+    if (count != 4) {
+        /* not a setup packet (e.g. a zero length status packet) */
+        for (i = 0; i < count; i++) {
+            (void)USB_EP0BR;
+        }
+        USB_EP0SR = EP0SR_RX_SUCCESS;
+        return;
+    }
     for (i = 0; i < count; i++) {
         unsigned int v = USB_EP0BR & 0xFFFF;
         if (i < 4) {
@@ -224,8 +302,9 @@ static void handle_setup(void)
         switch (req) {
         case REQ_INFO: {
             int n = snprintf((char *)buf, sizeof(buf),
-                             "YPS3DUMP 1 lanes=%d reqs=%u sdram=%dMB",
-                             lanes_swapped, usbdump_requests, usbdump_sdram_mb);
+                             "YPS3DUMP 1 lanes=%d reqs=%u sdram=%dMB\n%s",
+                             lanes_swapped, usbdump_requests, usbdump_sdram_mb,
+                             bootlog_buf);
             ep0_send(buf, n, length);
             return;
         }
@@ -262,6 +341,19 @@ static void handle_setup(void)
             if (length) {
                 ep0_send(buf, 0, length);
             }
+            return;
+        }
+        ep0_stall();
+        return;
+    }
+
+    if (type == 0x40) {
+        switch (req) {
+        case REQ_WRITE_MEM:
+            ep0_receive((unsigned char *)(value | (index << 16)), length);
+            return;
+        case REQ_EXEC:
+            exec_addr = value | (index << 16);
             return;
         }
         ep0_stall();
@@ -337,6 +429,13 @@ int usbdump_poll(void)
         return 1;
     }
     return 0;
+}
+
+unsigned long usbdump_exec_requested(void)
+{
+    unsigned long a = exec_addr;
+    exec_addr = 0;
+    return a;
 }
 
 int usbdump_exit_requested(void)
