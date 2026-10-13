@@ -37,6 +37,7 @@
 #include "usb_ch9.h"
 #include "power.h"
 #include <string.h>
+#include <stdio.h>
 
 #if defined(HAVE_USBSTACK) && !defined(BOOTLOADER)
 
@@ -99,6 +100,16 @@ static bool high_speed;
 unsigned long usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups, usb_dbg_inits;
 unsigned long usb_dbg_last_ssr, usb_dbg_last_ep0sr;
 int usb_dbg_variant;
+
+/* last events, for the debug screen: short tags with a value */
+#define USB_DBG_EVENTS 12
+char usb_dbg_ev[USB_DBG_EVENTS][12];
+int usb_dbg_ev_n;
+static void dbg_ev(const char *tag, unsigned long v)
+{
+    char *e = usb_dbg_ev[usb_dbg_ev_n++ % USB_DBG_EVENTS];
+    snprintf(e, sizeof(usb_dbg_ev[0]), "%s%lx", tag, v);
+}
 
 struct usb_drv_ep_spec usb_drv_ep_specs[USB_NUM_ENDPOINTS] = {
     [0] = {{USB_ENDPOINT_XFER_CONTROL, USB_ENDPOINT_XFER_CONTROL}},
@@ -195,6 +206,7 @@ static void ep0_setup(void)
     fifo_read(0, s.b, 8, 8);
     USB_EP0SR = EP0SR_RX_SUCCESS;
     usb_dbg_setups++;
+    dbg_ev("S", (s.b[0] << 8) | s.b[1]);
 
     /* a transfer still in flight belongs to a request the host gave up */
     ep0_fail_transfers();
@@ -215,6 +227,7 @@ static void ep0_int(void)
     USB_IR = 0;
     sr = USB_EP0SR;
     usb_dbg_last_ep0sr = sr;
+    dbg_ev("0:", sr);
 
     if (sr & EP0SR_STALL) {
         USB_EP0CR &= ~EP0CR_STALL;
@@ -338,6 +351,7 @@ static void bus_reset(void)
     int n;
 
     usb_dbg_resets++;
+    dbg_ev("R", USB_SSR & 0xffff);
     USB_EDR = 0xAA;             /* odd endpoints IN */
     USB_TR = 0;
     USB_SCR = SCR_DTZIEN_EN | SCR_RRD_EN | SCR_SUS_EN | SCR_RST_EN;
@@ -405,6 +419,7 @@ void usb_drv_init(void)
     int n;
 
     usb_dbg_inits++;
+    dbg_ev("I", usb_dbg_variant);
     for (n = 0; n < USB_NUM_ENDPOINTS; n++) {
         memset(ep_states[n], 0, sizeof(ep_states[n]));
         semaphore_init(&ep_states[n][DIR_OUT].complete, 1, 0);
@@ -452,6 +467,7 @@ void usb_drv_init(void)
 
 void usb_drv_exit(void)
 {
+    dbg_ev("X", 0);
     usb_drv_int_enable(false);
     USB_EIER = 0;
 }
@@ -669,6 +685,7 @@ void usb_attach(void)
 
 void usb_enable(bool on)
 {
+    dbg_ev(on ? "E1" : "E0", 0);
     if (on)
         usb_core_init();
     else

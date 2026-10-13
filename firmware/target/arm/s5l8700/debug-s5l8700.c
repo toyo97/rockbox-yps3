@@ -185,21 +185,25 @@ bool dbg_hw_info(void)
         {
             extern unsigned long usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups,
                 usb_dbg_inits, usb_dbg_last_ssr, usb_dbg_last_ep0sr;
-            extern int usb_dbg_variant;
-            _DEBUG_PRINTF("PHY variant %d (up: next, then replug)",
-                          usb_dbg_variant);
-            _DEBUG_PRINTF("USB init %lu irq %lu rst %lu setup %lu", usb_dbg_inits,
-                          usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups);
-            _DEBUG_PRINTF("SSR %04lx/%04lx EP0SR %02lx/%02lx",
-                          usb_dbg_last_ssr, (unsigned long)USB_SSR & 0xffff,
-                          usb_dbg_last_ep0sr, (unsigned long)USB_EP0SR & 0xff);
-            _DEBUG_PRINTF("EIR %03lx EIER %03lx SCR %04lx INTMSK %08lx",
-                          (unsigned long)USB_EIR & 0x1ff,
-                          (unsigned long)USB_EIER & 0x1ff,
-                          (unsigned long)USB_SCR & 0xffff,
-                          (unsigned long)INTMSK);
-            _DEBUG_PRINTF("SRCPND %08lx PWRCON %08lx", (unsigned long)SRCPND,
-                          (unsigned long)PWRCON);
+            extern int usb_dbg_variant, usb_dbg_ev_n;
+            extern char usb_dbg_ev[12][12];
+            int k;
+            _DEBUG_PRINTF("var %d init %lu irq %lu", usb_dbg_variant,
+                          usb_dbg_inits, usb_dbg_irqs);
+            _DEBUG_PRINTF("rst %lu setup %lu", usb_dbg_resets, usb_dbg_setups);
+            _DEBUG_PRINTF("SSR %04lx EP0SR %02lx", (unsigned long)USB_SSR & 0xffff,
+                          (unsigned long)USB_EP0SR & 0xff);
+            _DEBUG_PRINTF("EIR %03lx EIER %03lx", (unsigned long)USB_EIR & 0x1ff,
+                          (unsigned long)USB_EIER & 0x1ff);
+            _DEBUG_PRINTF("INTMSK %08lx", (unsigned long)INTMSK);
+            /* last 12 events, oldest first, 3 per line */
+            for (k = 0; k < 12; k += 3) {
+                int b0 = usb_dbg_ev_n - 12 + k;
+                _DEBUG_PRINTF("%-10s %-10s %-10s",
+                    b0 >= 0 ? usb_dbg_ev[b0 % 12] : "",
+                    b0 + 1 >= 0 ? usb_dbg_ev[(b0 + 1) % 12] : "",
+                    b0 + 2 >= 0 ? usb_dbg_ev[(b0 + 2) % 12] : "");
+            }
         }
 #endif
         _DEBUG_PRINTF("P5.2 %d P5.3 %d (left/right toggle)",
