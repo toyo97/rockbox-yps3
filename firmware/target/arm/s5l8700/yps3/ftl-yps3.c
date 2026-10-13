@@ -412,8 +412,10 @@ uint32_t ftl_init(void)
 
     /* DMA and ECC are only used if they work as expected on this unit */
     selftest_n = 0;
+#ifndef YPS3_NO_SELFTEST
     ftl_dma_selftest(selftest_logf);
     ftl_ecc_selftest(selftest_logf, 32);
+#endif
     return 0;
 }
 

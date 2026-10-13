@@ -54,6 +54,20 @@ def open_device():
     dev = usb.core.find(idVendor=VID, idProduct=PID)
     if dev is None:
         sys.exit("device not found; is the test bootloader running?")
+    if dev.bcdDevice != 0x0999:
+        # still enumerated as the DFU device: the started bootloader only
+        # shows its own descriptors after a bus reset
+        try:
+            dev.reset()
+        except usb.core.USBError:
+            pass
+        for _ in range(50):
+            time.sleep(0.1)
+            dev = usb.core.find(idVendor=VID, idProduct=PID)
+            if dev is not None and dev.bcdDevice == 0x0999:
+                break
+        else:
+            sys.exit("the device doesn't answer as the test bootloader")
     return dev
 
 
@@ -163,6 +177,15 @@ def cmd_load(dev, args):
         sys.exit(f"verify failed at offset {bad:#x}")
     print(f"uploaded {len(img)} bytes to {addr:#x}, verified, starting")
     vendor_out(dev, REQ_EXEC, addr & 0xFFFF, addr >> 16, b"")
+    if not args.no_reset:
+        # a new instance of the test bootloader only answers after a bus
+        # reset; give it time to mount the filesystem first
+        time.sleep(args.reset_delay)
+        try:
+            dev.reset()
+        except Exception:
+            pass
+        print("device reset, wait a few seconds before the next request")
 
 
 def cmd_exit(dev, args):
@@ -194,6 +217,9 @@ def main():
     s.add_argument("--addr", type=lambda x: int(x, 0), default=LOAD_ADDR,
                    help="load address: 0x08100000 (default) for bootloader "
                         "builds, 0x08000000 for rockbox.yps3")
+    s.add_argument("--no-reset", action="store_true",
+                   help="don't reset the bus after starting (rockbox.yps3)")
+    s.add_argument("--reset-delay", type=float, default=8)
     args = p.parse_args()
     dev = open_device()
     {"info": cmd_info, "page": cmd_page, "dump": cmd_dump,
