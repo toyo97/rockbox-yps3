@@ -1225,10 +1225,33 @@ static void ftl_write_setup(void)
     ftl_write_end = start + size;
 }
 
+/* development: merge the log of 'lbn' (e.g. one with pages that were
+   programmed without data and must not be programmed again) */
+int ftl_dev_merge(unsigned int lbn)
+{
+    struct ftl_log *log;
+    int rc;
+
+    if (!ftl_ok || !ftl_write_enabled || ftl_write_failed) {
+        return -1;
+    }
+    log = ftl_find_log(lbn);
+    if (!log) {
+        return -2;
+    }
+    rc = simple_merge(log);
+    if (rc) {
+        wfail(rc);
+    }
+    return rc;
+}
+
 void ftl_write_log(void (*logf_fn)(const char *fmt, ...))
 {
-    logf_fn("ftl write: en %d failed %d range %lu-%lu pages %lu merges %lu "
-            "cxt %lu erases %lu free %d", ftl_write_enabled, ftl_write_failed,
+    extern int nand_ll_last_status;
+    logf_fn("ftl write: en %d failed %d nandst %02x range %lu-%lu pages %lu "
+            "merges %lu cxt %lu erases %lu free %d", ftl_write_enabled,
+            ftl_write_failed, nand_ll_last_status & 0xff,
             (unsigned long)ftl_write_first, (unsigned long)ftl_write_end,
             ftl_stat_pages, ftl_stat_merges, ftl_stat_cxt, ftl_stat_erases,
             be16(&ftl_hdr[H_NFREE]));

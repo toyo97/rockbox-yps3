@@ -67,6 +67,7 @@
                                        only, if enabled) */
 #define REQ_FTL_ENABLE      0x5A    /* wValue 0x5752 enables writing */
 #define REQ_FTL_STATUS      0x5B    /* -> write statistics text */
+#define REQ_FTL_MERGE       0x5C    /* merge the log of lbn wValue */
 #define REQ_EXEC            0x55    /* jump to wValue | wIndex << 16, after
                                        the status stage */
 
@@ -80,6 +81,7 @@ extern bool ftl_write_enabled;
 uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer);
 uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer);
 void ftl_write_log(void (*logf_fn)(const char *fmt, ...));
+int ftl_dev_merge(unsigned int lbn);
 static int ftl_last_write_rc;
 static char ftl_status[256];
 static int ftl_status_len;
@@ -403,6 +405,9 @@ static void handle_setup(void)
                 ? (int)ftl_write(sector, n, buf) : -1;
             return;
         }
+        case REQ_FTL_MERGE:
+            ftl_last_write_rc = ftl_dev_merge(value);
+            return;
         case REQ_FTL_ENABLE:
             ftl_write_enabled = (value == 0x5752);
             nand_ll_write_enable = ftl_write_enabled;

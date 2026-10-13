@@ -149,6 +149,18 @@ void nand_ll_init(void)
     /* enable flash memory controller */
     PWRCON &= ~(1 << 1);
 
+    /* P3.5 high: the NAND's write protect input is released, like the
+       original firmware does at start-up (with it low, program and erase
+       are silently ignored) */
+    PCON3 = (PCON3 & ~(0xF << 20)) | (0x1 << 20);
+    PDAT3 |= (1 << 5);
+    /* P4.6 in function 5 next to the other SMC signals, and P5.2 high, as
+       the original firmware sets them at start-up (one of them is the
+       write protect) */
+    PCON4 = (PCON4 & ~(0xF << 24)) | (0x5 << 24);
+    PCON5 = (PCON5 & ~(0xF << 8)) | (0x1 << 8);
+    PDAT5 |= (1 << 2);
+
     /* P2.X is SMC I/O */
     PCON2 = 0x55555555;
     /* P4.1 = CLE, P4.4 = nWR, P4.5 = nRD */
@@ -436,6 +448,7 @@ int nand_ll_ecc_encode(const void *data, unsigned char *ecc, int size_sel)
     NAND_FIRST_WRITABLE_BLOCK: blocks 0-41 hold the boot loader images and
     the firmware's own data; the VFL contexts are at 42-48. */
 bool nand_ll_write_enable = false;
+int nand_ll_last_status = -1;
 #define NAND_FIRST_WRITABLE_BLOCK 42
 
 static bool nand_write_allowed(unsigned int page)
@@ -457,6 +470,48 @@ static int nand_write_word(unsigned int count, unsigned int word)
         FMCTRL1 = FMCTRL1_ClearWFIFO;
         return -1;
     }
+    return 0;
+}
+
+/*  DMA write of the data phase, like the original firmware's FIL: channel 1
+    with DMACON1 = 0x60880000 (memory to FMC), FMCTRL1 = DoWriteData |
+    WriteREQSEL. Programmed I/O through FMFIFO doesn't reach the chip. */
+static unsigned char dma_wbounce[4096] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+
+static int nand_write_dma(int bank, const unsigned char *buf, unsigned int len)
+{
+    const unsigned char *src = buf;
+    long timeout = 1000000;
+
+    if ((unsigned int)buf & 15) {
+        if (len > sizeof(dma_wbounce)) {
+            return -1;
+        }
+        memcpy(dma_wbounce, buf, len);
+        src = dma_wbounce;
+    }
+    FMCTRL0 = 0x18a1 | (((1 << bank) & 3) << 1);
+    DMACOM1 = 7;
+    DMACON1 = 0x60880000;
+    commit_dcache();
+    DMABASE1 = (unsigned int)src;
+    DMATCNT1 = (len >> 3) - 1;
+    FMDNUM = len - 1;
+    FMCTRL1 = FMCTRL1_DoWriteData | FMCTRL1_WriteREQSEL;
+    DMACOM1 = 4;
+    while (!(DMAALLST & 0x10)) {
+        if (--timeout == 0) {
+            DMACOM1 = 7;
+            nand_chip_select(bank);
+            return -1;
+        }
+    }
+    DMACOM1 = 7;
+    if (nand_wait_status(FMSTAT_TransDone)) {
+        nand_chip_select(bank);
+        return -1;
+    }
+    nand_chip_select(bank);
     return 0;
 }
 
@@ -522,15 +577,20 @@ int nand_ll_program_page(int bank, unsigned int page, const unsigned char *data,
     if (nand_wait_status(FMSTAT_AddrDone)) {
         return -1;
     }
-    if (nand_write_bytes(data, 4096) || nand_write_bytes(spare, spare_len)) {
+    if (nand_write_dma(bank, data, 4096) ||
+        nand_write_dma(bank, spare, spare_len)) {
         return -1;
     }
     if (nand_send_cmd(NAND_CMD_PROGCNFRM)) {
         return -1;
     }
     status = nand_wait_ready_status();
+    nand_ll_last_status = status;
     if (status < 0) {
         return -1;
+    }
+    if (!(status & 0x80)) {
+        return -4;          /* the chip reports write protection */
     }
     return (status & NAND_STATUS_FAIL) ? -2 : 0;
 }
@@ -560,6 +620,10 @@ int nand_ll_erase_block(int bank, unsigned int page)
         return -1;
     }
     status = nand_wait_ready_status();
+    nand_ll_last_status = status;
+    if (status >= 0 && !(status & 0x80)) {
+        return -4;          /* the chip reports write protection */
+    }
     if (status < 0) {
         return -1;
     }
