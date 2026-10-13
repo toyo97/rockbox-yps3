@@ -34,6 +34,8 @@
 #include "powermgmt.h"
 #include "backlight.h"
 #include "lcd.h"
+#include "button.h"
+#include "panic.h"
 #include "rtc.h"
 #if CONFIG_TUNER
 #include "fmradio.h"
@@ -1114,6 +1116,11 @@ static void sys_shutdown_common(void)
 void sys_poweroff(void)
 {
 #ifndef BOOTLOADER
+#if defined(SAMSUNG_YPS3) && defined(YPS3_DEBUG_POWEROFF)
+    panicf("poweroff from %p bat %d in %x/%x btn %x",
+           __builtin_return_address(0), _battery_voltage(),
+           power_input_status(), power_thread_inputs, button_read_device());
+#endif
     logf("sys_poweroff()");
     sys_shutdown_common();
     queue_broadcast(SYS_POWEROFF, 0);

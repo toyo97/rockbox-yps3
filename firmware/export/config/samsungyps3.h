@@ -95,6 +95,7 @@
 #define HAVE_BACKLIGHT_BRIGHTNESS
 
 /* Define this if you have a software controlled poweroff */
+#define YPS3_DEBUG_POWEROFF
 #define HAVE_SW_POWEROFF
 
 /* The number of bytes reserved for loadable codecs */

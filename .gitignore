@@ -337,3 +337,4 @@ __pycache__
 
 # YP-S3 NAND dumps (contain user data, keep local)
 /nanddump
+/yps3-install/
