@@ -794,9 +794,12 @@ static inline void put32(uint8_t *p, uint32_t v)
 #define C_STREAM_EC     0x204
 #define C_ECTBL         0x300
 
+int ftl_write_last_error;
+
 static int wfail(int rc)
 {
     ftl_write_failed = true;
+    ftl_write_last_error = rc;
     return rc;
 }
 
@@ -1267,9 +1270,9 @@ int ftl_dev_merge(unsigned int lbn)
 void ftl_write_log(void (*logf_fn)(const char *fmt, ...))
 {
     extern int nand_ll_last_status;
-    logf_fn("ftl write: en %d failed %d nandst %02x range %lu-%lu pages %lu "
-            "merges %lu cxt %lu erases %lu free %d", ftl_write_enabled,
-            ftl_write_failed, nand_ll_last_status & 0xff,
+    logf_fn("ftl write: en %d failed %d err %d nandst %02x range %lu-%lu "
+            "pages %lu merges %lu cxt %lu erases %lu free %d", ftl_write_enabled,
+            ftl_write_failed, ftl_write_last_error, nand_ll_last_status & 0xff,
             (unsigned long)ftl_write_first, (unsigned long)ftl_write_end,
             ftl_stat_pages, ftl_stat_merges, ftl_stat_cxt, ftl_stat_erases,
             be16(&ftl_hdr[H_NFREE]));
@@ -1341,6 +1344,7 @@ int ftl_sim_check(void (*logf_fn)(const char *fmt, ...))
     page is written when another page is written, on ftl_sync() and when
     the storage goes idle (nand_event). */
 #define WCACHE_NONE 0xffffffff
+unsigned long ftl_write_refused, ftl_write_refused_sector;
 static uint32_t cache_sector = WCACHE_NONE;     /* first sector of the page */
 static bool cache_dirty;
 static uint8_t cache_buf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
@@ -1384,6 +1388,8 @@ uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
     FTL_LOCK();
     if (!ftl_ok || !ftl_write_enabled || ftl_write_failed ||
         sector < ftl_write_first || sector + count > ftl_write_end) {
+        ftl_write_refused++;
+        ftl_write_refused_sector = sector;
         FTL_UNLOCK();
         return 1;
     }
