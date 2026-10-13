@@ -418,6 +418,10 @@ static void si4700_set_frequency(int freq)
 
         si4700_write_clear(CHANNEL, CHANNEL_TUNE);
     } while (!((cache[STATUSRSSI] & STATUSRSSI_STC) && (readchan == chan))
+#ifdef SAMSUNG_YPS3
+             /* the YP-S3's tuner never sets STC */
+             && readchan != chan
+#endif
              && ++tries < 20); /* don't hang forever if the chip won't tune */
 }
 

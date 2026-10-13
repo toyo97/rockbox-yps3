@@ -571,6 +571,52 @@ static void tuner_probe(void)
     PDAT4 &= ~(1 << 7);
 }
 
+/* Measures the CPU and tick speed against the RTC's own 32 kHz crystal */
+static void clock_probe(void)
+{
+    struct tm dt;
+    int sec, i;
+    unsigned long loops = 0;
+    long t0;
+
+    bootlog("CLKCON %08lx CLKCON2 %08lx CLKCON3 %08lx PLL0PMS %08lx "
+            "PLL1PMS %08lx PLLCON %08lx", (unsigned long)CLKCON,
+            (unsigned long)CLKCON2, (unsigned long)CLKCON3,
+            (unsigned long)PLL0PMS, (unsigned long)PLL1PMS,
+            (unsigned long)PLLCON);
+    rtc_read_datetime(&dt);
+    sec = dt.tm_sec;
+    /* wait for the start of a new second */
+    for (i = 0; i < 2000; i++) {
+        rtc_read_datetime(&dt);
+        if (dt.tm_sec != sec) break;
+    }
+    sec = dt.tm_sec;
+    t0 = current_tick;
+    for (;;) {
+        volatile int n;
+        for (n = 0; n < 1000; n++);
+        loops++;
+        rtc_read_datetime(&dt);
+        if (dt.tm_sec != sec) break;
+        if (loops > 1000000) break;
+    }
+    bootlog("one RTC second: %ld ticks (HZ %d), %lu x (1000 loops + rtc read)",
+            current_tick - t0, HZ, loops);
+
+    /* plain loop speed per 50 ticks, a "subs; bne" loop takes ~4 cycles
+       per iteration if it runs from the cache */
+    t0 = current_tick;
+    while (current_tick == t0);
+    t0 = current_tick;
+    loops = 0;
+    while (current_tick - t0 < 50) {
+        asm volatile("mov r0, #1000\n1: subs r0, r0, #1\n bne 1b" ::: "r0", "cc");
+        loops++;
+    }
+    bootlog("50 ticks: %lu x 1000 loop iterations", loops);
+}
+
 static void try_boot(void)
 {
     char str[48];
@@ -808,6 +854,7 @@ void main(void)
     usbdump_sdram_mb = sdram_mb;
     bootlog("sdram %d MB", sdram_mb);
 
+    clock_probe();
     dbg_stage = 32;
     if (fs_test()) {
         dbg_stage = 33;
