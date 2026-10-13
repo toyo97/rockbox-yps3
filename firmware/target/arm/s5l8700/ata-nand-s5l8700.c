@@ -35,13 +35,17 @@ static bool initialized = false;
 int nand_read_sectors(IF_MD(int drive,) sector_t start, int incount,
                      void* inbuf)
 {
-    return ftl_read(start, incount, inbuf);
+    /* the FTL returns positive error codes, the storage API wants
+       negative ones (FAT ignores write errors >= 0) */
+    uint32_t rc = ftl_read(start, incount, inbuf);
+    return rc ? -(int)rc : 0;
 }
 
 int nand_write_sectors(IF_MD(int drive,) sector_t start, int count,
                       const void* outbuf)
 {
-    return ftl_write(start, count, outbuf);
+    uint32_t rc = ftl_write(start, count, outbuf);
+    return rc ? -(int)rc : 0;
 }
 
 void nand_spindown(int seconds)
