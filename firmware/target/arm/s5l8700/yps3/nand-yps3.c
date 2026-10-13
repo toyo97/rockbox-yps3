@@ -61,6 +61,12 @@
 #define NAND_CMD_GET_STATUS     0x70
 #define NAND_CMD_READ_ID        0x90
 #define NAND_CMD_RESET          0xFF
+#define NAND_CMD_PROGRAM        0x80
+#define NAND_CMD_PROGCNFRM      0x10
+#define NAND_CMD_ERASE          0x60
+#define NAND_CMD_ERASECNFRM     0xD0
+
+#define NAND_STATUS_FAIL        0x01
 
 #define NAND_STATUS_READY       0x40
 
@@ -424,4 +430,138 @@ int nand_ll_ecc_encode(const void *data, unsigned char *ecc, int size_sel)
     commit_discard_dcache();
     memcpy(ecc, ecc_out, 9);
     return timeout ? 0 : -1;
+}
+
+/*  Writing. Off unless nand_ll_write_enable is set, and never below
+    NAND_FIRST_WRITABLE_BLOCK: blocks 0-41 hold the boot loader images and
+    the firmware's own data; the VFL contexts are at 42-48. */
+bool nand_ll_write_enable = false;
+#define NAND_FIRST_WRITABLE_BLOCK 42
+
+static bool nand_write_allowed(unsigned int page)
+{
+    unsigned int block = (page / 128) % 4096;   /* block within its die */
+    return nand_ll_write_enable && block >= NAND_FIRST_WRITABLE_BLOCK;
+}
+
+/* writes 1 to 4 bytes, first byte in the least significant position */
+static int nand_write_word(unsigned int count, unsigned int word)
+{
+#ifdef ROCKBOX_BIG_ENDIAN
+    word = swap32(word);    /* first byte in the most significant lane */
+#endif
+    FMDNUM = count - 1;
+    FMFIFO = word;
+    FMCTRL1 = FMCTRL1_DoWriteData;
+    if (nand_wait_status(FMSTAT_TransDone)) {
+        FMCTRL1 = FMCTRL1_ClearWFIFO;
+        return -1;
+    }
+    return 0;
+}
+
+static int nand_write_bytes(const unsigned char *buf, unsigned int len)
+{
+    unsigned int i, count, word;
+    for (i = 0; i < len; i += count) {
+        count = (len - i) < 4 ? (len - i) : 4;
+        word = buf[i];
+        if (count > 1) word |= buf[i + 1] << 8;
+        if (count > 2) word |= buf[i + 2] << 16;
+        if (count > 3) word |= (unsigned int)buf[i + 3] << 24;
+        if (nand_write_word(count, word)) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* status byte after a program or erase, -1 on timeout */
+static int nand_wait_ready_status(void)
+{
+    unsigned int status;
+    int timeout = NAND_TIMEOUT / 10;
+
+    if (nand_send_cmd(NAND_CMD_GET_STATUS)) {
+        return -1;
+    }
+    do {
+        if (nand_read_word(4, &status)) {
+            return -1;
+        }
+        if (--timeout == 0) {
+            return -1;
+        }
+    } while ((status & (NAND_STATUS_READY * 0x01010101)) == 0);
+    return status & 0xff;
+}
+
+/* Programs a whole page: 4096 data bytes and 'spare_len' spare bytes
+   (ECC already filled in). Returns 0, -1 on a controller timeout, -2 if
+   the chip reports a program failure, -3 if writing is not allowed. */
+int nand_ll_program_page(int bank, unsigned int page, const unsigned char *data,
+                         const unsigned char *spare, unsigned int spare_len)
+{
+    int status;
+
+    if (!nand_write_allowed(page)) {
+        return -3;
+    }
+    nand_chip_select(bank);
+    FMCTRL1 = FMCTRL1_ClearRFIFO | FMCTRL1_ClearWFIFO;
+    if (nand_send_cmd(NAND_CMD_PROGRAM)) {
+        return -1;
+    }
+    FMANUM = 4;
+    FMADDR0 = 0;
+    FMADDR1 = 0;
+    FMADDR2 = page & 0xFF;
+    FMADDR3 = (page >> 8) & 0xFF;
+    FMADDR4 = (page >> 16) & 0xFF;
+    FMCTRL1 = FMCTRL1_DoTransAddr;
+    if (nand_wait_status(FMSTAT_AddrDone)) {
+        return -1;
+    }
+    if (nand_write_bytes(data, 4096) || nand_write_bytes(spare, spare_len)) {
+        return -1;
+    }
+    if (nand_send_cmd(NAND_CMD_PROGCNFRM)) {
+        return -1;
+    }
+    status = nand_wait_ready_status();
+    if (status < 0) {
+        return -1;
+    }
+    return (status & NAND_STATUS_FAIL) ? -2 : 0;
+}
+
+/* Erases the block containing 'page'. Returns as nand_ll_program_page. */
+int nand_ll_erase_block(int bank, unsigned int page)
+{
+    int status;
+
+    if (!nand_write_allowed(page)) {
+        return -3;
+    }
+    page &= ~127u;
+    nand_chip_select(bank);
+    if (nand_send_cmd(NAND_CMD_ERASE)) {
+        return -1;
+    }
+    FMANUM = 2;
+    FMADDR0 = page & 0xFF;
+    FMADDR1 = (page >> 8) & 0xFF;
+    FMADDR2 = (page >> 16) & 0xFF;
+    FMCTRL1 = FMCTRL1_DoTransAddr;
+    if (nand_wait_status(FMSTAT_AddrDone)) {
+        return -1;
+    }
+    if (nand_send_cmd(NAND_CMD_ERASECNFRM)) {
+        return -1;
+    }
+    status = nand_wait_ready_status();
+    if (status < 0) {
+        return -1;
+    }
+    return (status & NAND_STATUS_FAIL) ? -2 : 0;
 }

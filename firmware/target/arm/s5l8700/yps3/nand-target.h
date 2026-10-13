@@ -33,6 +33,10 @@ extern bool nand_ll_use_dma;
    metadata bytes. Returns <0 if uncorrectable, else corrected errors. */
 int nand_ll_ecc_correct(void *data, const unsigned char *ecc, bool sector);
 int nand_ll_ecc_encode(const void *data, unsigned char *ecc, int size_sel);
+extern bool nand_ll_write_enable;
+int nand_ll_program_page(int bank, unsigned int page, const unsigned char *data,
+                         const unsigned char *spare, unsigned int spare_len);
+int nand_ll_erase_block(int bank, unsigned int page);
 
 /* used by the generic S5L8700 storage glue */
 void nand_set_active(void);
