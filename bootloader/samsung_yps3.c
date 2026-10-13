@@ -367,6 +367,50 @@ static void nand_scan(int bank, const struct nand_geometry *geo)
     button_wait_press();
 }
 
+/* Read a few locations whose content is known from the wiki, with each
+   address mode, and show the first 8 bytes. Only the mode where page 127
+   shows "220W" and page 130 shows "CUFD" at 0x20 is addressing correctly. */
+static void nand_addr_test(void)
+{
+    static const struct {
+        unsigned int page, col;
+        const char *what;
+    } tests[] = {
+        {0,      0,      "p0"},
+        {1,      0,      "p1"},
+        {127,    0,      "p127 220W"},
+        {130,    0x20,   "p130+20 CUFD"},
+        {0,      4096,   "p0 spare"},
+        {0x4F80, 0,      "p4F80 table"},
+        {0x5880, 0,      "p5880 mp3"},
+    };
+    unsigned char buf[8];
+    char str[48];
+    int line = 0, mode, saved = nand_ll_addr_swap;
+    unsigned int t, j;
+    int col;
+
+    lcd_clear_display();
+    lcd_puts(0, line++, "NAND address test");
+    for (mode = 1; mode >= 0; mode--) {
+        nand_ll_addr_swap = mode;
+        lcd_puts(0, line++, mode ? "-- BYTE mode --" : "-- PACK mode --");
+        for (t = 0; t < sizeof(tests) / sizeof(tests[0]); t++) {
+            int rc = nand_ll_read_raw(0, tests[t].page, tests[t].col, buf, 8);
+            col = snprintf(str, sizeof(str), "%d ", rc);
+            for (j = 0; j < 8; j++) {
+                col += snprintf(str + col, sizeof(str) - col, "%02X", buf[j]);
+            }
+            snprintf(str + col, sizeof(str) - col, " %s", tests[t].what);
+            lcd_puts(0, line++, str);
+        }
+    }
+    nand_ll_addr_swap = saved;
+    lcd_puts(0, line + 1, "Please photograph, then any key");
+    lcd_update();
+    button_wait_press();
+}
+
 static void nand_probe(const unsigned int *ids)
 {
     struct nand_geometry geo;
@@ -386,6 +430,8 @@ static void nand_probe(const unsigned int *ids)
         return;
     }
 
+    nand_addr_test();
+
     while (true) {
         nand_decode_id(ids[bank], &geo);
         if (geo.blocks && page >= geo.blocks * geo.pagesperblock) {
@@ -397,7 +443,8 @@ static void nand_probe(const unsigned int *ids)
 
         lcd_clear_display();
         line = 0;
-        snprintf(str, sizeof(str), "NAND bank %d ID %08X", bank, ids[bank]);
+        snprintf(str, sizeof(str), "bank %d ID %08X addr %s", bank, ids[bank],
+                 nand_ll_addr_swap ? "BYTE" : "PACK");
         lcd_puts(0, line++, str);
         snprintf(str, sizeof(str), "%u+%u %upg/blk %ublk",
                  geo.pagesize, geo.sparesize, geo.pagesperblock, geo.blocks);
@@ -409,7 +456,7 @@ static void nand_probe(const unsigned int *ids)
         line += 9;
         show_hex(line, "spare[0..63]:", page_buf + geo.pagesize, 64);
         line += 9;
-        lcd_puts(0, line++, "U/D pg L/R blk MENU bank");
+        lcd_puts(0, line++, "U/D pg L/R blk MENU addr");
         lcd_puts(0, line++, "BACK scan  SELECT exit");
         lcd_update();
 
@@ -430,10 +477,8 @@ static void nand_probe(const unsigned int *ids)
             page = (page >= geo.pagesperblock) ? page - geo.pagesperblock : 0;
         }
         else if (button & BUTTON_MENU) {
-            do {
-                bank = (bank + 1) % 4;
-            } while (!nand_bank_present(ids[bank]));
-            page = 0;
+            /* toggle how the address is written (per byte / packed) */
+            nand_ll_addr_swap = !nand_ll_addr_swap;
         }
         else if (button & BUTTON_BACK) {
             if (geo.blocks) {

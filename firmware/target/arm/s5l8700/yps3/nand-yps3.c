@@ -63,6 +63,13 @@
 /* rough busy-wait limit, a few tens of milliseconds at 200 MHz */
 #define NAND_TIMEOUT            1000000
 
+/* How the address cycles are handed to the controller:
+   1 = one byte per FMADDRn register (S5L8700, assumed),
+   0 = packed into FMADDR0/FMADDR1 like the S5L8701 Nano 2G driver.
+   Reading always page 0 / column 0 showed the packed form doesn't work
+   here. Exposed so the NAND probe can toggle it. */
+int nand_ll_addr_swap = 1;
+
 static void nand_chip_select(int bank)
 {
     unsigned int select;
@@ -206,8 +213,16 @@ int nand_ll_read_raw(int bank, unsigned int page, unsigned int col,
     }
 
     FMANUM = 4;
-    FMADDR0 = (page << 16) | (col & 0xFFFF);
-    FMADDR1 = (page >> 16) & 0xFF;
+    if (nand_ll_addr_swap) {
+        FMADDR0 = col & 0xFF;
+        FMADDR1 = (col >> 8) & 0xFF;
+        FMADDR2 = page & 0xFF;
+        FMADDR3 = (page >> 8) & 0xFF;
+        FMADDR4 = (page >> 16) & 0xFF;
+    } else {
+        FMADDR0 = (page << 16) | (col & 0xFFFF);
+        FMADDR1 = (page >> 16) & 0xFF;
+    }
     FMCTRL1 = FMCTRL1_DoTransAddr;
     if (nand_wait_status(FMSTAT_AddrDone)) {
         return -2;
