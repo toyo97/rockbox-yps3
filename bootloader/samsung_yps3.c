@@ -571,50 +571,112 @@ static void tuner_probe(void)
     PDAT4 &= ~(1 << 7);
 }
 
-/* Measures the CPU and tick speed against the RTC's own 32 kHz crystal */
+/* Measures the CPU and timer B (PCLK / 4800) speed against the USB frame
+   counter (the host sends a frame every millisecond) */
+typedef void (*loopfn_t)(void);
+static void loop_iram(void)
+{
+    asm volatile("mov r0, #1000\n1: subs r0, r0, #1\n bne 1b" ::: "r0", "cc");
+}
+static loopfn_t cur_loop = loop_iram;
+
+static void clock_measure(const char *label)
+{
+    unsigned long loops = 0, periods = 0, cp15;
+    unsigned f, last, ms = 0;
+    int oldlevel = disable_irq_save();
+
+    asm volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(cp15));
+    TBCON = TBCON;
+    SRCPND = INTMSK_TIMERB;
+    last = USB_FNR & 0x7FF;
+    while (ms < 200 && loops < 2000000) {
+        cur_loop();
+        loops++;
+        if (SRCPND & INTMSK_TIMERB) {
+            TBCON = TBCON;
+            SRCPND = INTMSK_TIMERB;
+            periods++;
+        }
+        f = USB_FNR & 0x7FF;
+        ms += (f - last) & 0x7FF;
+        last = f;
+    }
+    restore_irq(oldlevel);
+    /* ~4 cycles per iteration: MHz = loops * 1000 * 4 / (ms * 1000) */
+    /* timer B: PCLK / 16 / 300 / 100 per period (one tick at PCLK 48 MHz) */
+    bootlog("%s: CLKCON %08lx CLKCON2 %08lx PLL0PMS %08lx cp15 %08lx: "
+            "%u ms: CPU ~%lu MHz, %lu ticks/s (PCLK ~%lu MHz)", label,
+            (unsigned long)CLKCON, (unsigned long)CLKCON2,
+            (unsigned long)PLL0PMS, cp15, ms,
+            ms ? loops * 4 / ms : 0, ms ? periods * 1000 / ms : 0,
+            ms ? periods * 480 / ms : 0);
+}
+
+static void cp15_clocking(unsigned long mode)  /* 0 fastbus, 1 sync, 3 async */
+{
+    unsigned long r;
+    asm volatile("mrc p15, 0, %0, c1, c0, 0" : "=r"(r));
+    r = (r & ~0xC0000000) | (mode << 30);
+    asm volatile("mcr p15, 0, %0, c1, c0, 0\n nop\n nop\n nop\n nop" :: "r"(r));
+}
+
+static uint32_t sdram_loop[16] SDRAM_BSS_ATTR __attribute__((aligned(32)));
+
 static void clock_probe(void)
 {
-    struct tm dt;
-    int sec, i;
-    unsigned long loops = 0;
-    long t0;
+    /* mov r0, #1000 (0x3e8 = 0xfa ror 30); subs r0, r0, #1; bne -2; bx lr */
+    sdram_loop[0] = 0xe3a00ffa;
+    sdram_loop[1] = 0xe2500001;
+    sdram_loop[2] = 0x1afffffd;
+    sdram_loop[3] = 0xe12fff1e;
+    commit_discard_idcache();
 
-    bootlog("CLKCON %08lx CLKCON2 %08lx CLKCON3 %08lx PLL0PMS %08lx "
-            "PLL1PMS %08lx PLLCON %08lx", (unsigned long)CLKCON,
-            (unsigned long)CLKCON2, (unsigned long)CLKCON3,
-            (unsigned long)PLL0PMS, (unsigned long)PLL1PMS,
-            (unsigned long)PLLCON);
-    rtc_read_datetime(&dt);
-    sec = dt.tm_sec;
-    /* wait for the start of a new second */
-    for (i = 0; i < 2000; i++) {
-        rtc_read_datetime(&dt);
-        if (dt.tm_sec != sec) break;
+    {
+        unsigned long li, ld;
+        asm volatile("mrc p15, 0, %0, c9, c0, 1" : "=r"(li));
+        asm volatile("mrc p15, 0, %0, c9, c0, 0" : "=r"(ld));
+        bootlog("lockdown: I %08lx D %08lx", li, ld);
     }
-    sec = dt.tm_sec;
-    t0 = current_tick;
-    for (;;) {
-        volatile int n;
-        for (n = 0; n < 1000; n++);
-        loops++;
-        rtc_read_datetime(&dt);
-        if (dt.tm_sec != sec) break;
-        if (loops > 1000000) break;
+    cur_loop = loop_iram;
+    clock_measure("loop in IRAM");
+    {
+        unsigned long c2 = CLKCON2;
+        int oldlevel = disable_irq_save();
+        CLKCON2 = c2 | 0x100;
+        restore_irq(oldlevel);
+        clock_measure("CLKCON2 |= 0x100");
+        oldlevel = disable_irq_save();
+        CLKCON2 = c2;
+        restore_irq(oldlevel);
     }
-    bootlog("one RTC second: %ld ticks (HZ %d), %lu x (1000 loops + rtc read)",
-            current_tick - t0, HZ, loops);
+    cur_loop = (loopfn_t)sdram_loop;
+    clock_measure("loop in SDRAM");
 
-    /* plain loop speed per 50 ticks, a "subs; bne" loop takes ~4 cycles
-       per iteration if it runs from the cache */
-    t0 = current_tick;
-    while (current_tick == t0);
-    t0 = current_tick;
-    loops = 0;
-    while (current_tick - t0 < 50) {
-        asm volatile("mov r0, #1000\n1: subs r0, r0, #1\n bne 1b" ::: "r0", "cc");
-        loops++;
+    {
+        unsigned long i4, i5, i6, i7, d5, d6, d7;
+        asm volatile("mrc p15, 0, %0, c6, c4, 1" : "=r"(i4));
+        asm volatile("mrc p15, 0, %0, c6, c5, 1" : "=r"(i5));
+        asm volatile("mrc p15, 0, %0, c6, c6, 1" : "=r"(i6));
+        asm volatile("mrc p15, 0, %0, c6, c7, 1" : "=r"(i7));
+        asm volatile("mrc p15, 0, %0, c6, c5, 0" : "=r"(d5));
+        asm volatile("mrc p15, 0, %0, c6, c6, 0" : "=r"(d6));
+        asm volatile("mrc p15, 0, %0, c6, c7, 0" : "=r"(d7));
+        bootlog("regions: I4 %08lx I5 %08lx I6 %08lx I7 %08lx D5 %08lx "
+                "D6 %08lx D7 %08lx", i4, i5, i6, i7, d5, d6, d7);
     }
-    bootlog("50 ticks: %lu x 1000 loop iterations", loops);
+    /* disable regions 5-7 */
+    asm volatile("mov r0, #0\n"
+                 " mcr p15, 0, r0, c6, c5, 1\n mcr p15, 0, r0, c6, c5, 0\n"
+                 " mcr p15, 0, r0, c6, c6, 1\n mcr p15, 0, r0, c6, c6, 0\n"
+                 " mcr p15, 0, r0, c6, c7, 1\n mcr p15, 0, r0, c6, c7, 0"
+                 ::: "r0");
+    commit_discard_idcache();
+    cur_loop = loop_iram;
+    clock_measure("regions 5-7 off, loop in IRAM");
+    cur_loop = (loopfn_t)sdram_loop;
+    clock_measure("regions 5-7 off, loop in SDRAM");
+    cur_loop = loop_iram;
 }
 
 static void try_boot(void)
@@ -849,12 +911,13 @@ void main(void)
     dbg_stage = 31;
     lcd_puts(0, 1, "SDRAM init + test...");
     lcd_update();
+    dbg_stage = 31;
     sdram_init();
+    clock_probe();
     sdram_mb = sdram_test();
     usbdump_sdram_mb = sdram_mb;
     bootlog("sdram %d MB", sdram_mb);
 
-    clock_probe();
     dbg_stage = 32;
     if (fs_test()) {
         dbg_stage = 33;

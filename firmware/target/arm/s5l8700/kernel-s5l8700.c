@@ -43,7 +43,11 @@ void tick_start(unsigned int interval_in_ms)
     
     /* configure timer for 10 kHz */
     TBCMD = (1 << 1);   /* TB_CLR */
+#ifdef SAMSUNG_YPS3
+    TBPRE = 315 - 1;    /* prescaler for 50.4 MHz PCLK (measured) */
+#else
     TBPRE = 300 - 1;    /* prescaler for 48 MHz PCLK */
+#endif
     TBCON = (0 << 13) | /* TB_INT1_EN */
             (1 << 12) | /* TB_INT0_EN */
             (0 << 11) | /* TB_START */

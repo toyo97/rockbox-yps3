@@ -387,7 +387,10 @@ int nand_ll_ecc_correct(void *data, const unsigned char *ecc, bool sector)
     ECC_DATA_PTR = (unsigned int)data;
     ECC_SPARE_PTR = (unsigned int)ecc_bytes;
     ECC_CTRL = ECCCTRL_STARTDECODING;
-    ECC_SIZE_SEL = sector ? 1 : 0;
+    ECC_SIZE_SEL = sector ? 1 : 0;     /* same order as the original firmware */
+    /* the pending bit may still be set from the previous decode for a
+       moment, so give the engine some time first (~25 us at 200 MHz) */
+    for (volatile int i = 0; i < 1000; i++);
     while (!(ECC_SRCPND & (1 << 19)) && --timeout);
 
     commit_discard_dcache();

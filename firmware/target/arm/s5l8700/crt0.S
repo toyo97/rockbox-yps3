@@ -170,7 +170,11 @@ start_loc:
     ldr r0, [r1,#0x20]  // PLLLOCK
     tst r0, #1
     beq 1b
+#ifdef SAMSUNG_YPS3
+    mov r0, #0x180      // bit 8: PCLK = HCLK / 2 (bit 9 doesn't stick)
+#else
     mov r0, #0x280
+#endif
     str r0, [r1,#0x3c]  // CLKCON2
     ldr r0, =0x20803180 // FCLK_CPU = 200MHz, HCLK = 100MHz, PCLK = 50MHz, other clocks off
     str r0, [r1]        // CLKCON
@@ -346,6 +350,15 @@ start_loc:
     mcr p15, 0, r0, c6, c3, 0
     ldr r0, =0x24000029
     mcr p15, 0, r0, c6, c4, 0
+    mov r0, #0
+    mcr p15, 0, r0, c6, c5, 1
+    mcr p15, 0, r0, c6, c5, 0
+    mcr p15, 0, r0, c6, c6, 1
+    mcr p15, 0, r0, c6, c6, 0
+    mcr p15, 0, r0, c6, c7, 1
+    mcr p15, 0, r0, c6, c7, 0   // disable regions 5-7: whatever set them up
+                                // before (e.g. the original firmware) takes
+                                // priority over regions 0-4 otherwise
     mov r0, #0x1e
     mcr p15, 0, r0, c2, c0, 1
     mov r0, #0x1e
