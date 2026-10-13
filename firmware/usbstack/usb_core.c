@@ -766,6 +766,56 @@ static void control_request_handler_drivers(struct usb_ctrlrequest* req, uint8_t
     }
 }
 
+#ifdef ROCKBOX_BIG_ENDIAN
+/* Descriptors are built in CPU byte order; the wire is little endian. */
+static void swap16_at(uint8_t *p)
+{
+    uint8_t t = p[0];
+    p[0] = p[1];
+    p[1] = t;
+}
+
+static void descriptors_to_le(uint8_t *p, int size)
+{
+    while(size >= 2 && p[0] >= 2 && p[0] <= size) {
+        int len = p[0], i;
+        switch(p[1]) {
+            case USB_DT_DEVICE:
+                if(len >= 14) {
+                    swap16_at(p + 2);
+                    swap16_at(p + 8);
+                    swap16_at(p + 10);
+                    swap16_at(p + 12);
+                }
+                break;
+            case USB_DT_CONFIG:
+            case USB_DT_OTHER_SPEED_CONFIG:
+            case USB_DT_DEVICE_QUALIFIER:
+                if(len >= 4)
+                    swap16_at(p + 2);
+                break;
+            case USB_DT_ENDPOINT:
+                if(len >= 6)
+                    swap16_at(p + 4);
+                break;
+            case USB_DT_STRING:
+                for(i = 2; i + 1 < len; i += 2)
+                    swap16_at(p + i);
+                break;
+            case 0x21: /* HID: bcdHID, then wDescriptorLength of each */
+                if(len >= 6) {
+                    swap16_at(p + 2);
+                    for(i = 7; i + 1 < len; i += 3)
+                        swap16_at(p + i);
+                }
+                break;
+        }
+        p += len;
+        size -= len;
+    }
+}
+#endif
+
 static void request_handler_device_get_descriptor(struct usb_ctrlrequest* req, uint8_t* reqdata, size_t reqdata_size)
 {
     int size;
@@ -854,6 +904,15 @@ static void request_handler_device_get_descriptor(struct usb_ctrlrequest* req, u
 
     if(ptr) {
         logf("data %d (%d)", size, length);
+#ifdef ROCKBOX_BIG_ENDIAN
+        /* convert the whole descriptor (set) before cutting it short */
+        if((size_t)size > reqdata_size)
+            size = reqdata_size;
+        if (ptr != reqdata)
+            memcpy(reqdata, ptr, size);
+        ptr = reqdata;
+        descriptors_to_le(reqdata, size);
+#endif
         length = MIN(size, length);
 
         if (ptr != reqdata)

@@ -211,12 +211,18 @@ static void ep0_setup(void)
     /* a transfer still in flight belongs to a request the host gave up */
     ep0_fail_transfers();
 
+    /* the USB core takes the fields in CPU byte order, the wire is little
+       endian and the CPU big endian */
+    s.req.wValue = letoh16(s.req.wValue);
+    s.req.wIndex = letoh16(s.req.wIndex);
+    s.req.wLength = letoh16(s.req.wLength);
+
     /* the controller handles SET_ADDRESS, status stage included */
     if (usb_drv_is_set_address(&s.req)) {
-        usb_core_notify_set_address(letoh16(s.req.wValue) & 0x7f);
+        usb_core_notify_set_address(s.req.wValue & 0x7f);
         return;
     }
-    ep0_wlength = letoh16(s.req.wLength);
+    ep0_wlength = s.req.wLength;
     usb_core_setup_received(&s.req);
 }
 

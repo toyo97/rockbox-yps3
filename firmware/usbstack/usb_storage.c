@@ -824,7 +824,7 @@ static void send_and_read_next(void)
 static void handle_scsi_ready(struct command_block_wrapper* cbw)
 {
     struct storage_info info;
-    unsigned int length = cbw->data_transfer_length;
+    unsigned int length = letoh32(cbw->data_transfer_length);
     sector_t block_count;
     unsigned int block_size;
     bool lun_present=true;
