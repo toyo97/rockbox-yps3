@@ -132,13 +132,16 @@ void panicf( const char *fmt, ...)
         /* the FTL writer's state, for storage related panics */
         extern int ftl_write_last_error;
         extern unsigned long ftl_stat_pages, ftl_stat_merges, ftl_stat_cxt,
-            ftl_write_refused, ftl_write_refused_sector;
+            ftl_write_refused, ftl_write_refused_sector,
+            ftl_stat_wcalls, ftl_stat_wlast;
         extern bool ftl_write_enabled;
         lcd_putsf(0, y++, "ftl wr %d err %d pg %lu mrg %lu cxt %lu",
                   ftl_write_enabled, ftl_write_last_error, ftl_stat_pages,
                   ftl_stat_merges, ftl_stat_cxt);
         lcd_putsf(0, y++, "refused %lu last %lu", ftl_write_refused,
                   ftl_write_refused_sector);
+        lcd_putsf(0, y++, "calls %lu last %lu", ftl_stat_wcalls,
+                  ftl_stat_wlast);
     }
 #endif
 #endif

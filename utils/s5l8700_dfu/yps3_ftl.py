@@ -29,6 +29,10 @@ def write(dev, sector, data):
         s = sector + off // 512
         nd.vendor_out(dev, R_WRITE, s & 0xFFFF, s >> 16, chunk)
 
+def sync(dev):
+    """the FTL caches one page; enabling again flushes it"""
+    nd.vendor_out(dev, R_ENABLE, 0x5752, 0, b"")
+
 def status(dev):
     return nd.vendor_in(dev, R_STATUS, 0, 0, 256).decode(errors="replace").rstrip("\0")
 
@@ -64,6 +68,7 @@ def main():
             data = open(sys.argv[3], "rb").read()
             data += b"\0" * (-len(data) % 512)
         write(dev, s, data)
+        sync(dev)
         print(status(dev))
         back = read(dev, s, len(data) // 512)
         print("verify:", "OK" if back == data else "MISMATCH")

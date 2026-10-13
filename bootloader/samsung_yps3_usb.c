@@ -80,6 +80,7 @@ static unsigned char buf[NAND_PAGE_TOTAL] __attribute__((aligned(4)));
 extern bool ftl_write_enabled;
 uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer);
 uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer);
+uint32_t ftl_sync(void);
 void ftl_write_log(void (*logf_fn)(const char *fmt, ...));
 int ftl_dev_merge(unsigned int lbn);
 static int ftl_last_write_rc;
@@ -409,6 +410,11 @@ static void handle_setup(void)
             ftl_last_write_rc = ftl_dev_merge(value);
             return;
         case REQ_FTL_ENABLE:
+            /* also flushes the FTL's page cache, before writing is
+               switched off */
+            if (ftl_write_enabled && ftl_sync()) {
+                ftl_last_write_rc = -2;
+            }
             ftl_write_enabled = (value == 0x5752);
             nand_ll_write_enable = ftl_write_enabled;
             return;

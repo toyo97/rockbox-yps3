@@ -1345,6 +1345,7 @@ int ftl_sim_check(void (*logf_fn)(const char *fmt, ...))
     the storage goes idle (nand_event). */
 #define WCACHE_NONE 0xffffffff
 unsigned long ftl_write_refused, ftl_write_refused_sector;
+unsigned long ftl_stat_wcalls, ftl_stat_wlast;
 static uint32_t cache_sector = WCACHE_NONE;     /* first sector of the page */
 static bool cache_dirty;
 static uint8_t cache_buf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
@@ -1386,6 +1387,8 @@ uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
     uint32_t rc = 0;
 
     FTL_LOCK();
+    ftl_stat_wcalls++;
+    ftl_stat_wlast = sector;
     if (!ftl_ok || !ftl_write_enabled || ftl_write_failed ||
         sector < ftl_write_first || sector + count > ftl_write_end) {
         ftl_write_refused++;
