@@ -151,6 +151,7 @@
 /* USB */
 #define HAVE_USBSTACK
 #define USB_NUM_ENDPOINTS 6
+#define USB_HAS_BULK        /* usb-yps3.c: control and bulk transfers */
 #define USB_DEVBSS_ATTR __attribute__((aligned(16)))
 /* until the FTL can write, the PC gets a write protected drive */
 #define HAVE_STORAGE_READONLY
