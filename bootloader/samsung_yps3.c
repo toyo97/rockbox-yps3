@@ -538,6 +538,35 @@ static bool fs_test(void)
 }
 
 /* Load and start Rockbox, unless a key is held */
+/* Reads the tuner's registers with different power-up delays and both
+   polarities of P4.7, and logs DEVICEID (0x1242 for a Si4702/3). */
+static void tuner_probe(void)
+{
+    static const unsigned delays_us[] = {0, 1000, 10000, 100000};
+    unsigned char r[32];
+    unsigned i, pol;
+
+    for (pol = 0; pol < 2; pol++) {
+        for (i = 0; i < sizeof(delays_us) / sizeof(delays_us[0]); i++) {
+            int rc;
+            /* off, then on: P4.7 high (pol 0) or low (pol 1) is "on" */
+            if (pol) PDAT4 |= (1 << 7); else PDAT4 &= ~(1 << 7);
+            udelay(20000);
+            if (pol) PDAT4 &= ~(1 << 7); else PDAT4 |= (1 << 7);
+            udelay(delays_us[i]);
+            memset(r, 0xEE, sizeof(r));
+            rc = fmradio_i2c_read(0x20, r, sizeof(r));
+            /* reads start at register 0x0A: DEVICEID is at offset 12 */
+            bootlog("tuner pol %u delay %u: rc %d id %02x%02x chip %02x%02x "
+                    "pwr %02x%02x", pol, delays_us[i], rc, r[12], r[13],
+                    r[14], r[15], r[16], r[17]);
+        }
+    }
+    bootlog("PCON4 %08lx PDAT4 %02lx", (unsigned long)PCON4,
+            (unsigned long)PDAT4);
+    PDAT4 &= ~(1 << 7);
+}
+
 static void try_boot(void)
 {
     char str[48];
@@ -729,6 +758,8 @@ void main(void)
     }
         
     // FM power
+    dbg_stage = 25;
+    tuner_probe();
     dbg_stage = 26;
     si4700_init();
     dbg_stage = 27;
