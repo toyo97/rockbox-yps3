@@ -447,8 +447,7 @@ drivers/touchscreen.c
 #if (CONFIG_STORAGE & STORAGE_NAND) && (CONFIG_NAND == NAND_TCC)
 target/arm/ata-nand-telechips.c
 #endif
-#if (CONFIG_STORAGE & STORAGE_NAND) && (CONFIG_NAND == NAND_SAMSUNG) \
-    && !defined(SAMSUNG_YPS3) /* YP-S3: FTL not implemented yet */
+#if (CONFIG_STORAGE & STORAGE_NAND) && (CONFIG_NAND == NAND_SAMSUNG)
 target/arm/s5l8700/ata-nand-s5l8700.c
 #endif
 #if (CONFIG_STORAGE & STORAGE_NAND) && (CONFIG_NAND == NAND_RK27XX)
@@ -1927,6 +1926,7 @@ target/arm/s5l8700/yps3/backlight-yps3.c
 target/arm/s5l8700/yps3/nand-yps3.c
 target/arm/s5l8700/yps3/power-yps3.c
 target/arm/s5l8700/yps3/sdram-yps3.c
+target/arm/s5l8700/yps3/ftl-yps3.c
 #endif /* SAMSUNG_YPS3 */
 
 #ifdef PBELL_VIBE500

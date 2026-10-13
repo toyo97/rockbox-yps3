@@ -26,6 +26,11 @@
 void nand_ll_init(void);
 unsigned int nand_ll_read_id(int bank);
 int nand_ll_reset(int bank);
+
+/* used by the generic S5L8700 storage glue */
+void nand_set_active(void);
+long nand_last_activity(void);
+void nand_power_down(void);
 extern int nand_ll_addr_swap;
 int nand_ll_read_raw(int bank, unsigned int page, unsigned int col,
                      unsigned char *buf, unsigned int len);

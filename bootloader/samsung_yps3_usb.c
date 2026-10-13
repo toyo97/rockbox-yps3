@@ -37,6 +37,7 @@
 #include "s5l87xx.h"
 #include "nand-target.h"
 #include "samsung_yps3_usb.h"
+#include "sdram-target.h"
 
 /* register bits, from s3c-hsudc.c */
 #define SSR_RESET           (1 << 0)
@@ -59,6 +60,7 @@
 
 #define NAND_PAGE_TOTAL     (4096 + 128)
 
+/* in IRAM: the USB reader must work even if the SDRAM doesn't */
 static unsigned char buf[NAND_PAGE_TOTAL] __attribute__((aligned(4)));
 static const unsigned int *nand_ids;
 

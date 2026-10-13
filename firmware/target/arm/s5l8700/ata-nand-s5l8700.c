@@ -66,11 +66,18 @@ void nand_enable(bool on)
 
 void nand_get_info(IF_MD(int drive,) struct storage_info *info)
 {
+#ifdef SAMSUNG_YPS3
+    (*info).sector_size = 512;
+    (*info).num_sectors = ftl_sector_count();
+    (*info).vendor = "Samsung";
+    (*info).product = "YP-S3";
+#else
     uint32_t ppb = ftl_banks * (*ftl_nand_type).pagesperblock;
     (*info).sector_size = SECTOR_SIZE;
     (*info).num_sectors = (*ftl_nand_type).userblocks * ppb;
     (*info).vendor = "Apple";
     (*info).product = "iPod Nano 2G";
+#endif
     (*info).revision = "1.0";
 }
 

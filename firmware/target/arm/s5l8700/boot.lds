@@ -98,6 +98,13 @@ SECTIONS
      _fiqstackend = .;
   } > IRAM
 
+#ifdef SAMSUNG_YPS3
+  /* large buffers only used after sdram_init() */
+  .sdram (NOLOAD) : {
+     *(.sdram*);
+  } > DRAM
+#endif
+
   /* The bss section is too large for IRAM on the Nano 2G, thanks to the FTL.
      We just move it 31MB into the DRAM */
   .bss (NOLOAD) : {

@@ -21,8 +21,10 @@
 
 #include "config.h"
 #include "system.h"
+#include "kernel.h"
 #include "s5l87xx.h"
 #include "nand-target.h"
+#include "storage.h"
 
 /*  Driver for the S5L8700 flash memory controller for low-level access to the
     NAND flash of the Samsung YP-S3.
@@ -255,4 +257,40 @@ int nand_ll_read_raw(int bank, unsigned int page, unsigned int col,
     }
 
     return 0;
+}
+
+static long nand_last_activity_value = -1;
+
+void nand_set_active(void)
+{
+    nand_last_activity_value = current_tick;
+}
+
+long nand_last_activity(void)
+{
+    return nand_last_activity_value;
+}
+
+void nand_power_down(void)
+{
+    /* TODO: the NAND has no separate power control that we know of */
+}
+
+int nand_event(long id, intptr_t data)
+{
+    int rc = 0;
+
+    if (LIKELY(id == Q_STORAGE_TICK)) {
+        if (TIME_BEFORE(current_tick, nand_last_activity_value + HZ / 5)) {
+            STG_EVENT_ASSERT_ACTIVE(STORAGE_NAND);
+        }
+    }
+    else if (id == Q_STORAGE_SLEEPNOW) {
+        nand_power_down();
+    }
+    else {
+        rc = storage_event_default_handler(id, data, nand_last_activity_value,
+                                           STORAGE_NAND);
+    }
+    return rc;
 }

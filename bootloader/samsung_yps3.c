@@ -56,6 +56,11 @@
 #include "nand-target.h"
 #include "samsung_yps3_usb.h"
 #include "sdram-target.h"
+#include "file_internal.h"
+#include "storage.h"
+#include "disk.h"
+#include "dir.h"
+#include "ftl-target.h"
 
 #define LONG_DELAY  200000
 #define SHORT_DELAY  50000
@@ -445,6 +450,49 @@ static void usbdump_mode(void)
     lcd_clear_display();
 }
 
+/* Mount the FAT partitions through the FTL and list the root directory */
+static void fs_test(void)
+{
+    char str[48];
+    int line = 0, rc;
+    long t0 = current_tick;
+
+    lcd_clear_display();
+    lcd_puts(0, line++, "Filesystem test");
+    lcd_update();
+
+    rc = storage_init();
+    snprintf(str, sizeof(str), "storage_init %d, %lu sectors", rc,
+             (unsigned long)ftl_sector_count());
+    lcd_puts(0, line++, str);
+    lcd_update();
+    if (rc == 0) {
+        filesystem_init();
+        rc = disk_mount_all();
+        snprintf(str, sizeof(str), "mounted %d, %ld ms", rc,
+                 (current_tick - t0) * 1000 / HZ);
+        lcd_puts(0, line++, str);
+        if (rc > 0) {
+            DIR *dir = opendir("/");
+            struct dirent *entry;
+            while (dir && (entry = readdir(dir)) != NULL && line < 25) {
+                struct dirinfo info = dir_get_info(dir, entry);
+                snprintf(str, sizeof(str), "%s%s", entry->d_name,
+                         (info.attribute & ATTR_DIRECTORY) ? "/" : "");
+                lcd_puts(1, line++, str);
+            }
+            if (dir) {
+                closedir(dir);
+            }
+        }
+    }
+    lcd_puts(0, 26, "press any key");
+    lcd_update();
+    button_wait_press();
+    while (button_read_device() & BUTTON_MAIN);
+    lcd_clear_display();
+}
+
 static void nand_probe(const unsigned int *ids)
 {
     struct nand_geometry geo;
@@ -645,6 +693,9 @@ void main(void)
     sdram_init();
     sdram_mb = sdram_test();
     usbdump_sdram_mb = sdram_mb;
+
+    dbg_stage = 32;
+    fs_test();
 
     /* get rid of the logo and of start-up messages */
     lcd_clear_display();

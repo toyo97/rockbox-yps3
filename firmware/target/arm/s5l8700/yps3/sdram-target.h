@@ -21,6 +21,13 @@
 #define SDRAM_BASE  0x08000000
 #define SDRAM_SIZE  (32 * 1024 * 1024)
 
+/* for large bootloader buffers that are only used after sdram_init() */
+#ifdef BOOTLOADER
+#define SDRAM_BSS_ATTR __attribute__((section(".sdram")))
+#else
+#define SDRAM_BSS_ATTR
+#endif
+
 void sdram_init(void);
 int sdram_test(void);
 
