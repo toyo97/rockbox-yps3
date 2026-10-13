@@ -410,10 +410,13 @@ void INT_USB_FUNC(void)
 {
     unsigned int ssr = USB_SSR;
     unsigned int eir = USB_EIR & 0x1ff;
+    unsigned int saved_ir = USB_IR;     /* the interrupted code's endpoint */
     int n;
 
     usb_dbg_irqs++;
     usb_dbg_last_ssr = ssr;
+    if (!eir && !(ssr & SSR_ANY))
+        dbg_ev("?", ssr);
 
     if (ssr & SSR_ANY) {
         USB_SSR = ssr & SSR_ANY & ~SSR_RESET;
@@ -436,6 +439,7 @@ void INT_USB_FUNC(void)
         else
             ep_out_drain(n);
     }
+    USB_IR = saved_ir;
 }
 
 /* driver interface */
@@ -492,8 +496,10 @@ void usb_drv_init(void)
     high_speed = (USB_SSR & SSR_HSP) != 0;
     eier_mask = 1;
     memset(ep_mps_set, 0, sizeof(ep_mps_set));
+    int oldlevel = disable_irq_save();
     udc_setup();
     USB_SSR = SSR_ANY;
+    restore_irq(oldlevel);
     USB_EIR = 0x1ff;
     usb_drv_int_enable(true);
 }
@@ -512,6 +518,7 @@ void usb_drv_ep_init(const struct usb_drv_ep_alloc_ctx* ctx, int ep)
     if (n == 0)
         return;
     dbg_ev("N", ep & 0xff);
+    int oldlevel = disable_irq_save();
     USB_IR = n;
     USB_MPR = ep_mps(n);
     USB_FC_REG(0x84) = (n < 5) ? 0x38 : 0x1c;
@@ -521,6 +528,7 @@ void usb_drv_ep_init(const struct usb_drv_ep_alloc_ctx* ctx, int ep)
     ep_mps_set[n] = 1;
     eier_mask |= 1 << n;
     USB_EIER = eier_mask;
+    restore_irq(oldlevel);
 }
 
 void usb_drv_ep_deinit(const struct usb_drv_ep_alloc_ctx* ctx, int ep)
@@ -638,6 +646,7 @@ void usb_drv_stall(int endpoint, bool stall, bool in)
     int n = EP_NUM(endpoint);
     dbg_ev(stall ? "X1" : "X0", n);
     (void)in;
+    int oldlevel = disable_irq_save();
 
     USB_IR = n;
     if (n == 0) {
@@ -652,16 +661,22 @@ void usb_drv_stall(int endpoint, bool stall, bool in)
         else
             USB_ECR &= ~ECR_STALL;
     }
+    restore_irq(oldlevel);
 }
 
 bool usb_drv_stalled(int endpoint, bool in)
 {
     int n = EP_NUM(endpoint);
     (void)in;
+    int oldlevel = disable_irq_save();
+    bool r;
     USB_IR = n;
     if (n == 0)
-        return (USB_EP0CR & EP0CR_STALL) != 0;
-    return (USB_ECR & ECR_STALL) != 0;
+        r = (USB_EP0CR & EP0CR_STALL) != 0;
+    else
+        r = (USB_ECR & ECR_STALL) != 0;
+    restore_irq(oldlevel);
+    return r;
 }
 
 void usb_drv_reset_endpoint(int endpoint, bool send)
