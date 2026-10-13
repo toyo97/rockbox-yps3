@@ -549,28 +549,25 @@ static void tick_wait(long ticks)
    polarities of P4.7, and logs DEVICEID (0x1242 for a Si4702/3). */
 static void tuner_probe(void)
 {
-    static const unsigned delays_us[] = {0, 10000, 20000, 100000};
     unsigned char r[32];
-    unsigned i, pol;
+    char hex[3 * 32 + 1];
+    unsigned i, a;
+    static const unsigned char addrs[] = {0x20, 0x22, 0xC0, 0xC6};
 
-    for (pol = 0; pol < 2; pol++) {
-        for (i = 0; i < sizeof(delays_us) / sizeof(delays_us[0]); i++) {
-            int rc;
-            /* off, then on: P4.7 high (pol 0) or low (pol 1) is "on" */
-            if (pol) PDAT4 |= (1 << 7); else PDAT4 &= ~(1 << 7);
-            tick_wait(2);
-            if (pol) PDAT4 &= ~(1 << 7); else PDAT4 |= (1 << 7);
-            tick_wait(delays_us[i] / (1000000 / HZ));
-            memset(r, 0xEE, sizeof(r));
-            rc = fmradio_i2c_read(0x20, r, sizeof(r));
-            /* reads start at register 0x0A: DEVICEID is at offset 12 */
-            bootlog("tuner pol %u delay %u: rc %d id %02x%02x chip %02x%02x "
-                    "pwr %02x%02x", pol, delays_us[i], rc, r[12], r[13],
-                    r[14], r[15], r[16], r[17]);
+    /* P4.7 high powers the tuner (low reads all 0xFF) */
+    PDAT4 &= ~(1 << 7);
+    tick_wait(2);
+    PDAT4 |= (1 << 7);
+    tick_wait(10);
+    for (a = 0; a < sizeof(addrs); a++) {
+        int rc;
+        memset(r, 0xEE, sizeof(r));
+        rc = fmradio_i2c_read(addrs[a], r, sizeof(r));
+        for (i = 0; i < sizeof(r); i++) {
+            snprintf(hex + 3 * i, 4, "%02x ", r[i]);
         }
+        bootlog("tuner i2c %02x rc %d: %s", addrs[a], rc, hex);
     }
-    bootlog("PCON4 %08lx PDAT4 %02lx", (unsigned long)PCON4,
-            (unsigned long)PDAT4);
     PDAT4 &= ~(1 << 7);
 }
 
