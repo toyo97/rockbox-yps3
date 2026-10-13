@@ -352,19 +352,43 @@ static void ep_out_drain(int n)
     }
 }
 
-static void bus_reset(void)
+static unsigned int eier_mask = 1;     /* EP0 + allocated endpoints */
+static unsigned int ep_mps_set[USB_NUM_ENDPOINTS];
+
+/* controller set-up, also after every bus reset (the controller's
+   registers are reset when the bus reset ends) */
+static void udc_setup(void)
 {
     int n;
 
-    usb_dbg_resets++;
-    dbg_ev("R", USB_SSR & 0xffff);
-    USB_EDR = 0xAA;             /* odd endpoints IN */
+    USB_EDR = 0x2a;             /* endpoints 1, 3, 5 IN */
     USB_TR = 0;
-    USB_SCR = SCR_DTZIEN_EN | SCR_RRD_EN | SCR_SUS_EN | SCR_RST_EN;
+    /* the original firmware's value; s3c-hsudc uses DTZIEN|RRD|SUS|RST */
+    USB_SCR = 0x4ec3;
     USB_EP0CR = 0;
     USB_IR = 0;
     USB_MPR = EP0_MPS;
-    USB_EIER = 1;               /* EP0; the others when allocated */
+    for (n = 1; n < USB_NUM_ENDPOINTS; n++) {
+        if (ep_mps_set[n]) {
+            USB_IR = n;
+            USB_MPR = ep_mps(n);
+        }
+    }
+    USB_IR = 0;
+    USB_EIER = eier_mask;
+}
+
+static void bus_reset(void)
+{
+    int n;
+    long spin = 0;
+
+    usb_dbg_resets++;
+    /* like the original firmware: wait for the end of the reset */
+    while ((USB_SSR & SSR_RESET) && spin++ < 2000000)
+        USB_SSR = SSR_RESET;
+    dbg_ev("R", spin);
+    udc_setup();
 
     for (n = 1; n < USB_NUM_ENDPOINTS; n++) {
         ep_complete(n, DIR_IN, -1);
@@ -384,7 +408,7 @@ void INT_USB_FUNC(void)
     usb_dbg_last_ssr = ssr;
 
     if (ssr & SSR_ANY) {
-        USB_SSR = ssr & SSR_ANY;
+        USB_SSR = ssr & SSR_ANY & ~SSR_RESET;
         if (ssr & SSR_SDE)
             high_speed = (ssr & SSR_HSP) != 0;
         if (ssr & SSR_RESET)
@@ -458,14 +482,9 @@ void usb_drv_init(void)
     }
 
     high_speed = (USB_SSR & SSR_HSP) != 0;
-    USB_EDR = 0xAA;
-    USB_TR = 0;
-    /* the original firmware's value; s3c-hsudc uses DTZIEN|RRD|SUS|RST */
-    USB_SCR = 0x4ec3;
-    USB_EP0CR = 0;
-    USB_IR = 0;
-    USB_MPR = EP0_MPS;
-    USB_EIER = 1;
+    eier_mask = 1;
+    memset(ep_mps_set, 0, sizeof(ep_mps_set));
+    udc_setup();
     USB_SSR = SSR_ANY;
     USB_EIR = 0x1ff;
     usb_drv_int_enable(true);
@@ -488,7 +507,9 @@ void usb_drv_ep_init(const struct usb_drv_ep_alloc_ctx* ctx, int ep)
     USB_MPR = ep_mps(n);
     USB_ECR = ECR_FLUSH;
     USB_ECR = 0;
-    USB_EIER |= 1 << n;
+    ep_mps_set[n] = 1;
+    eier_mask |= 1 << n;
+    USB_EIER = eier_mask;
 }
 
 void usb_drv_ep_deinit(const struct usb_drv_ep_alloc_ctx* ctx, int ep)
@@ -497,7 +518,9 @@ void usb_drv_ep_deinit(const struct usb_drv_ep_alloc_ctx* ctx, int ep)
     (void)ctx;
     if (n == 0)
         return;
-    USB_EIER &= ~(1 << n);
+    ep_mps_set[n] = 0;
+    eier_mask &= ~(1 << n);
+    USB_EIER = eier_mask;
 }
 
 int usb_drv_port_speed(void)
