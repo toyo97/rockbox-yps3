@@ -538,11 +538,18 @@ static bool fs_test(void)
 }
 
 /* Load and start Rockbox, unless a key is held */
+/* busy wait: USEC_TIMER isn't running in this bootloader */
+static void tick_wait(long ticks)
+{
+    long end = current_tick + ticks + (ticks ? 1 : 0);
+    while (TIME_BEFORE(current_tick, end));
+}
+
 /* Reads the tuner's registers with different power-up delays and both
    polarities of P4.7, and logs DEVICEID (0x1242 for a Si4702/3). */
 static void tuner_probe(void)
 {
-    static const unsigned delays_us[] = {0, 1000, 10000, 100000};
+    static const unsigned delays_us[] = {0, 10000, 20000, 100000};
     unsigned char r[32];
     unsigned i, pol;
 
@@ -551,9 +558,9 @@ static void tuner_probe(void)
             int rc;
             /* off, then on: P4.7 high (pol 0) or low (pol 1) is "on" */
             if (pol) PDAT4 |= (1 << 7); else PDAT4 &= ~(1 << 7);
-            udelay(20000);
+            tick_wait(2);
             if (pol) PDAT4 &= ~(1 << 7); else PDAT4 |= (1 << 7);
-            udelay(delays_us[i]);
+            tick_wait(delays_us[i] / (1000000 / HZ));
             memset(r, 0xEE, sizeof(r));
             rc = fmradio_i2c_read(0x20, r, sizeof(r));
             /* reads start at register 0x0A: DEVICEID is at offset 12 */
