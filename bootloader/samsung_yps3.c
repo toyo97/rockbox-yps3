@@ -679,6 +679,60 @@ static void clock_probe(void)
     cur_loop = loop_iram;
 }
 
+/* Plays silence through I2S with DMA like pcm-s5l8700.c and times it
+   against the USB frame counter to find the real sample rate. */
+static uint16_t audio_buf[16384] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+
+static void audio_measure(const char *label, int p, int m, int sd, int cdiv,
+                          unsigned long txcon)
+{
+    unsigned last, f, ms = 0;
+    unsigned long st = 0;
+
+    I2STXCOM = 0x8;     /* tx mode, interface off */
+    DMACOM0 = 5;
+    PLL1PMS = (p << 16) | (m << 8) | sd;
+    PLL1LCNT = 280;
+    PLLCON |= 1 << 1;
+    while ((PLLLOCK & (1 << 1)) == 0);
+    CLKCON = (CLKCON & ~0xFF) | (2 << 5) | (1 << 4) | (cdiv - 1);
+    PWRCON &= ~(1 << 6);
+    I2STXCON = txcon;
+    I2SCLKCON = 1;
+
+    DMACON0 = (0 << 30) | (1 << 29) | (1 << 22) | (1 << 16);
+    DMACOM0 = 7;
+    DMABASE0 = (unsigned int)audio_buf;
+    DMATCNT0 = sizeof(audio_buf) / 2 - 1;
+    commit_dcache();
+    last = USB_FNR & 0x7FF;
+    DMACOM0 = 4;
+    I2STXCOM = (1 << 3) | (1 << 2) | (1 << 1);
+    while (ms < 3000) {
+        st = DMAALLST;
+        if (st & 1) break;
+        f = USB_FNR & 0x7FF;
+        ms += (f - last) & 0x7FF;
+        last = f;
+    }
+    I2STXCOM = 0x8;
+    DMACOM0 = 5;
+    /* 16-bit stereo: 4 bytes per frame */
+    bootlog("audio %s: PLL1 %d/%d/%d cdiv %d txcon %08lx: %u ms for %u frames "
+            "-> %lu Hz (DMAALLST %08lx)", label, p, m, sd, cdiv, txcon, ms,
+            (unsigned)(sizeof(audio_buf) / 4),
+            ms ? (unsigned long)(sizeof(audio_buf) / 4) * 1000 / ms : 0, st);
+}
+
+static void audio_probe(void)
+{
+    PCON7 = (PCON7 & ~(0x0FFFFF00)) | 0x02222200;
+    memset(audio_buf, 0, sizeof(audio_buf));
+    audio_measure("rockbox 44.1", 37, 151, 1, 9, 0x00000301);
+    audio_measure("bclk 2", 37, 151, 1, 9, 0x00000311);
+    audio_measure("cdiv 1", 37, 151, 1, 1, 0x00000301);
+}
+
 static void try_boot(void)
 {
     char str[48];
@@ -914,6 +968,7 @@ void main(void)
     dbg_stage = 31;
     sdram_init();
     clock_probe();
+    audio_probe();
     sdram_mb = sdram_test();
     usbdump_sdram_mb = sdram_mb;
     bootlog("sdram %d MB", sdram_mb);
