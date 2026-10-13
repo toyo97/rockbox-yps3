@@ -357,7 +357,13 @@ bool si4700_detect(void)
 {
     if (!tuner_present) {
         tuner_power(true);
-        tuner_present = (si4700_read_reg(DEVICEID) == 0x1242);
+        uint16_t id = si4700_read_reg(DEVICEID);
+        tuner_present = (id == 0x1242);
+#ifdef SAMSUNG_YPS3
+        /* the YP-S3's tuner answers with this ID, its registers are
+           otherwise laid out and initialised like a Si470x */
+        tuner_present |= (id == 0x1B63);
+#endif
         tuner_power(false);
     }
     return tuner_present;
