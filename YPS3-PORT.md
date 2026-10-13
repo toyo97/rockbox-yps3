@@ -6,11 +6,11 @@ started the port in 2009-2010. Upstream Rockbox deleted it in February 2026
 because it no longer compiled and it had never been able to read the
 internal flash.
 
-**Status (October 2026): the bootloader and the full Rockbox firmware build.
-On the hardware, the test bootloader runs over USB (DFU), sets up the SDRAM,
-and mounts the original firmware's FAT32 music partition read-only through a
-reimplementation of its flash translation layer. The full firmware hasn't
-been run on the player yet. Nothing is ever written to the flash.**
+**Status (October 2026): Rockbox runs on the player, started over USB
+(DFU). Music plays from the internal flash, in stereo, and the FM radio
+works. The flash is read only: Rockbox's own writes (settings, playlist
+control file) go to a 1 MiB RAM overlay and are lost at power off. Nothing
+is ever written to the flash.**
 
 ### What works on the hardware
 
@@ -18,15 +18,16 @@ been run on the player yet. Nothing is ever written to the flash.**
 |---|---|
 | DFU loading (`s5l8700_dfu.py`) | works |
 | LCD (type 2), backlight, button lights, touch keys, RTC, ADC | works |
-| SDRAM (32 MB, timings from the original stage 1 loader) | works, passes a memory test |
-| Raw NAND reads | works |
-| Whimory VFL/FTL, read only (`ftl-yps3.c`) | works: Rockbox mounts the FAT32 partition, about 1.2 s |
-| USB: read-only NAND reader, upload-and-run (`yps3_nanddump.py`) | works |
-| NAND DMA, hardware ECC | written; turned on at start-up only if self-tests pass |
-| FM tuner | the chip answers but never reports a finished tune |
-| Full Rockbox firmware | builds, not run yet |
-| Audio (WM1800 driver) | written, untested |
-| Writing to the flash, USB mass storage | not done |
+| SDRAM (32 MB, timings from the original stage 1 loader) | works |
+| CPU 196 MHz with caches, 100 Hz tick | works (see pitfalls) |
+| Whimory VFL/FTL, read only (`ftl-yps3.c`) | works, mount in ~0.6 s |
+| NAND DMA, hardware ECC | work, enabled after start-up self-tests |
+| USB test bootloader: NAND reader, upload-and-run | works |
+| Full Rockbox: menus, file browser | works |
+| Playback (WM1800 codec, I2S DMA), headphones | works, stereo |
+| FM radio (tuner answers with DEVICEID 0x1B63) | works, scan finds stations |
+| Writing to the flash, USB mass storage in Rockbox | not done |
+| Battery calibration, power off on battery, permanent install | not done |
 
 ## The hardware
 
@@ -202,20 +203,8 @@ firmware. If it doesn't come back, hold the power slider to switch it off.
 
 ## Status on real hardware (October 2026)
 
-Tested over DFU on a 4 GB player: LCD type 2, one K9LBG08U0M chip.
-
-**Working:**
-* DFU loading
-* LCD, backlight, button LEDs
-* touch keys, RTC, ADC (battery and USB voltage)
-* raw NAND reads
-* a read-only USB NAND reader
-
-**Not working:** the FM tuner never reports a completed tune.
-
-To read the flash: start the bootloader, then run
-`utils/s5l8700_dfu/yps3_nanddump.py info | page N | dump | spares | mem`.
-It reads about 290 KB/s, limited by the programmed-I/O NAND reads.
+Tested over DFU on a 4 GB player: LCD type 2, one K9LBG08U0M chip. See the
+table at the top.
 
 ### Pitfalls found on the way
 
@@ -228,6 +217,24 @@ It reads about 290 KB/s, limited by the programmed-I/O NAND reads.
   SoC runs big-endian.
 * The Si4700 driver could loop forever while tuning. It now gives up after 20
   tries.
+* **Caches:** crt0 set up MPU regions 0-4 but left 5-7 as the original
+  firmware's stage 1 had them: SDRAM and IRAM in higher priority, non
+  cacheable regions. The CPU ran like a 12 MHz one. crt0 now disables
+  regions 5-7 (196 MHz measured).
+* PCLK = HCLK / 2 is CLKCON2 bit 8 on this chip; bit 9 (Nano 2G) doesn't
+  stick. PCLK was 100 MHz and the tick twice too fast.
+* The slow CPU hid timing bugs: the ECC engine's pending bit can still be
+  set from the previous decode, so wait a little before polling it.
+* PCM DMA: writing DMABASE0/DMATCNT0 + DMACOM0 = 4 during a transfer
+  restarts the channel, it doesn't queue. Each chunk is started from the
+  completion interrupt.
+* The tuner (DEVICEID 0x1B63, otherwise Si470x registers) never sets STC:
+  a tune is done when READCHAN matches. P4.7 high powers it.
+* USB power must be reported as a charger, or Rockbox powers off when idle
+  with the cable plugged in.
+* After the bootloader starts from DFU, the PC still talks to the DFU
+  device until a USB bus reset; `yps3_nanddump.py` does it.
+* `USEC_TIMER` (`udelay`) isn't running when started from DFU.
 
 ### NAND / FTL findings
 
@@ -284,31 +291,33 @@ make -j$(nproc) && make zip   # -> rockbox.yps3, rockbox.zip (.rockbox)
 
 ### Development loop
 
-1. Put the player in DFU mode and run the bootloader:
-   `s5l8700_dfu.py run build-yps3/rockboot.ebn`.
-   It mounts the flash, logs the result, then waits for USB requests.
+1. Put the player in DFU mode and run the development bootloader, which
+   doesn't start the copy of Rockbox on the flash:
+   `s5l8700_dfu.py run build-yps3-dev/rockboot.ebn` (`build-yps3-dev` is a
+   bootloader build with `-DYPS3_NO_AUTOBOOT` added to `GCCOPTS`).
+   It measures the clocks, mounts the flash, logs the results, then waits
+   for USB requests.
 2. Read its log with `yps3_nanddump.py info`.
-3. Start a new bootloader build with
-   `yps3_nanddump.py load build-yps3/rockboot.ebn`.
-   Start the full firmware with
-   `yps3_nanddump.py load --addr 0x08000000 build-yps3-main/rockbox.yps3`.
-   No DFU reset is needed.
-4. If `/.rockbox/rockbox.yps3` is on the player, the bootloader starts it by
-   itself. Hold any key to stay in the test program.
+3. Start a new bootloader build with `yps3_nanddump.py load
+   build-yps3-dev/rockboot.ebn`, or the full firmware with
+   `yps3_nanddump.py load --addr 0x08000000 --no-reset
+   build-yps3-main/rockbox.yps3`. No DFU reset is needed.
+4. The normal bootloader (`build-yps3`) starts `/.rockbox/rockbox.yps3` from
+   the flash by itself. Hold any key to stay in the test program. Copy
+   `.rockbox` from `rockbox.zip` with the original firmware over MTP, using
+   `gio copy` per file (`cp` fails on MTP).
 
 ## Roadmap
 
-1. Confirm that DFU loading and the 2009 drivers work with this build.
-2. Read the NAND probe results and choose a storage strategy: reuse or adapt
-   `ftl-nano2g.c`, or write a new FTL.
-3. Initialise the SDRAM, then get a read-only FTL and FAT mount in the
-   bootloader so it can list files on the screen.
-4. Load `rockbox.yps3` from the flash through DFU, and get the full Rockbox
-   running with the existing UI and file browser.
-5. Audio codec, then playback.
-6. A permanent bootloader install: the dual-boot method and the on-NAND DFU
-   image slots.
-7. USB, power management and polish.
+1. Done: DFU loading, SDRAM, read-only FTL, full Rockbox, playback, radio.
+2. FTL writes (settings, USB file transfer). Risky for the data on the
+   flash, so it waits for the owner's go-ahead.
+3. USB mass storage in Rockbox (the UDC is S3C2443-like, see
+   `bootloader/samsung_yps3_usb.c`).
+4. Battery calibration, power off on battery, LCD sleep, CPU frequency
+   scaling.
+5. A permanent bootloader install: the dual-boot method and the on-NAND DFU
+   image slots. Writes to the boot area, so it also waits for a go-ahead.
 
 ## References
 
