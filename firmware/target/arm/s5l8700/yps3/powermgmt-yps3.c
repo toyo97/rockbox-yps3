@@ -18,24 +18,33 @@
 #include "config.h"
 #include "powermgmt.h"
 #include "adc.h"
+#include "s5l87xx.h"
 
-/* TODO: calibrate on real discharge curves, these are generic Li-Po */
+/*  The battery is on ADC channel 2. On battery power the reading tops out
+    at 1023 when the battery is nearly full; the original firmware uses raw
+    levels 898 (low) / 930 / 956 / 983 / 1013 / 1023 (full). With USB
+    power the ADC reference is different: a full battery reads ~945.
+    The millivolt scales below are estimates from these points (on
+    battery ~3.95 mV per count, on USB ~4.4 mV per count). */
 unsigned short battery_level_disksafe = 3500;
-unsigned short battery_level_shutoff = 3400;
+unsigned short battery_level_shutoff = 3450;
 
+/* from the original firmware's levels, 0% = raw 898, 100% = raw 1023 */
 unsigned short percent_to_volt_discharge[11] =
 {
-    3450, 3600, 3680, 3730, 3770, 3810, 3860, 3930, 4010, 4090, 4180
+    3547, 3600, 3650, 3700, 3750, 3790, 3830, 3880, 3930, 3990, 4040
 };
 
 unsigned short percent_to_volt_charge[11] =
 {
-    3550, 3800, 3880, 3930, 3970, 4010, 4060, 4110, 4150, 4180, 4200
+    3600, 3750, 3820, 3870, 3910, 3950, 3990, 4030, 4080, 4130, 4180
 };
 
-/* ADC channel 2 is the battery, full scale 1023 = about 4.65 V. According
-   to the wiki the reading is only valid with the USB cable plugged in. */
 int _battery_voltage(void)
 {
-    return (adc_read(2) * 4650) >> 10;
+    int raw = adc_read(2);
+
+    if (PDAT1 & (1 << 1))           /* USB power: other ADC reference */
+        return raw * 4400 / 1000;
+    return raw * 3950 / 1000;
 }
