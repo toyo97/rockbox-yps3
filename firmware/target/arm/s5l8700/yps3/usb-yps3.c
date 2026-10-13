@@ -297,6 +297,15 @@ static void ep_in_kick(int n)
     int len = MIN(ep->len - ep->cnt, mps);
 
     USB_IR = n;
+    /* An odd sized packet written while the previous one is still in the
+       FIFO goes out rounded up to even (seen: a 14 byte CSW after a data
+       packet). Wait until the FIFO is empty. */
+    {
+        unsigned int esr = USB_ESR, spin = 0;
+        while ((esr & ESR_PSIF_MASK) && spin++ < 200000)
+            esr = USB_ESR;
+        dbg_ev("k", esr);
+    }
     dbg_ev("K", (n << 12) | len);
     fifo_write(n, ep->buf + ep->cnt, len);
     ep->cnt += len;
