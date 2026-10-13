@@ -6,9 +6,27 @@ started the port in 2009-2010. Upstream Rockbox deleted it in February 2026
 because it no longer compiled and it had never been able to read the
 internal flash.
 
-**Status: experimental. The only output is a hardware test bootloader that
-runs from RAM over USB. It writes nothing to the player's flash, so it
-can't play music yet.**
+**Status (October 2026): the bootloader and the full Rockbox firmware build.
+On the hardware, the test bootloader runs over USB (DFU), sets up the SDRAM,
+and mounts the original firmware's FAT32 music partition read-only through a
+reimplementation of its flash translation layer. The full firmware hasn't
+been run on the player yet. Nothing is ever written to the flash.**
+
+### What works on the hardware
+
+| Part | Status |
+|---|---|
+| DFU loading (`s5l8700_dfu.py`) | works |
+| LCD (type 2), backlight, button lights, touch keys, RTC, ADC | works |
+| SDRAM (32 MB, timings from the original stage 1 loader) | works, passes a memory test |
+| Raw NAND reads | works |
+| Whimory VFL/FTL, read only (`ftl-yps3.c`) | works: Rockbox mounts the FAT32 partition, about 1.2 s |
+| USB: read-only NAND reader, upload-and-run (`yps3_nanddump.py`) | works |
+| NAND DMA, hardware ECC | written; turned on at start-up only if self-tests pass |
+| FM tuner | the chip answers but never reports a finished tune |
+| Full Rockbox firmware | builds, not run yet |
+| Audio (WM1800 driver) | written, untested |
+| Writing to the flash, USB mass storage | not done |
 
 ## The hardware
 
@@ -244,6 +262,10 @@ It reads about 290 KB/s, limited by the programmed-I/O NAND reads.
 
 ## Building
 
+The toolchains have no big-endian `libgcc`, which the full firmware needs.
+Build one once with `tools/libgcc-be/build.sh ~/.local/rockbox-libgcc-be`.
+`configure` looks there by default; override with `LIBGCC_BE=dir`.
+
 ```sh
 # Ubuntu/Debian; Rockbox officially uses its own GCC 9.5 (tools/rockboxdev.sh)
 sudo apt install gcc-arm-none-eabi
@@ -253,8 +275,26 @@ export PATH=~/bin:$PATH
 
 mkdir build-yps3 && cd build-yps3
 ../tools/configure --target=samsungyps3 --type=b
-make -j$(nproc)          # -> rockboot.ebn
+make -j$(nproc)          # -> rockboot.ebn (bootloader)
+
+mkdir ../build-yps3-main && cd ../build-yps3-main
+../tools/configure --target=samsungyps3 --type=n
+make -j$(nproc) && make zip   # -> rockbox.yps3, rockbox.zip (.rockbox)
 ```
+
+### Development loop
+
+1. Put the player in DFU mode and run the bootloader:
+   `s5l8700_dfu.py run build-yps3/rockboot.ebn`.
+   It mounts the flash, logs the result, then waits for USB requests.
+2. Read its log with `yps3_nanddump.py info`.
+3. Start a new bootloader build with
+   `yps3_nanddump.py load build-yps3/rockboot.ebn`.
+   Start the full firmware with
+   `yps3_nanddump.py load --addr 0x08000000 build-yps3-main/rockbox.yps3`.
+   No DFU reset is needed.
+4. If `/.rockbox/rockbox.yps3` is on the player, the bootloader starts it by
+   itself. Hold any key to stay in the test program.
 
 ## Roadmap
 
