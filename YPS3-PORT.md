@@ -182,6 +182,66 @@ firmware. If it doesn't come back, hold the power slider to switch it off.
    storage driver. The K9LBG08U0M should read as `B655D7EC` (bytes
    EC D7 55 B6), decoded as `4096+128 128pg/blk 8192blk`.
 
+## Status on real hardware (October 2026)
+
+Tested over DFU on a 4 GB player: LCD type 2, one K9LBG08U0M chip.
+
+**Working:**
+* DFU loading
+* LCD, backlight, button LEDs
+* touch keys, RTC, ADC (battery and USB voltage)
+* raw NAND reads
+* a read-only USB NAND reader
+
+**Not working:** the FM tuner never reports a completed tune.
+
+To read the flash: start the bootloader, then run
+`utils/s5l8700_dfu/yps3_nanddump.py info | page N | dump | spares | mem`.
+It reads about 290 KB/s, limited by the programmed-I/O NAND reads.
+
+### Pitfalls found on the way
+
+* The 2009 bootloader switched to SVC mode to enable interrupts. Current
+  crt0 runs `main` in SYS mode, so `main` ended up on the IRQ stack and was
+  corrupted by the first tick. The fix is `enable_irq()`.
+* The S5L8700 flash controller takes **one address cycle per `FMADDRn`
+  register**. The S5L8701 (Nano 2G) packs them into `FMADDR0`/`FMADDR1`.
+* The FIFO hands the first byte in the most significant lane, because the
+  SoC runs big-endian.
+* The Si4700 driver could loop forever while tuning. It now gives up after 20
+  tries.
+
+### NAND / FTL findings
+
+* The flash is used as 2 dies x 4096 blocks of 128 pages (4096 + 128 bytes).
+  Whimory pairs block *N* on die 0 with block *N*+4096 on die 1 and
+  interleaves pages. Spare bytes 12-15 hold `2 * page + die` (big endian).
+* Spare layout:
+
+  | Bytes | Content |
+  |---|---|
+  | 0 | bad block marker |
+  | 2-10 | ECC of the metadata |
+  | 12-31 | metadata |
+  | 40-119 | 8 x 10 bytes of ECC for the 512-byte sectors |
+
+  Factory bad blocks are all `00`; there are 15 of them.
+* Block 0 page 127 holds `"220W"` (Whimory 2.2) and tables of block numbers.
+  Blocks 3-6 hold the DFU image and Samsung's bootloader.
+* Blocks 42/44/46/48 are rotating one-page context records. The newest has
+  the highest counter (`0x12`). Each holds 16-bit block numbers and the bad
+  block list.
+* Logical data is page-mapped through log blocks: physical order is not
+  logical order. The FAT boot sectors were found at the start of physical
+  blocks 1182 (FAT16, 40 MB, "S3" system drive) and 3799 (FAT32, 3.7 GB,
+  music).
+* Samsung's bootloader (blocks 4-6) contains the whole Whimory stack (TFS4
+  Light, VFL, FTL) with debug strings and macro text. Its function names
+  (`_LoadVFLCxt`, `VFL_Read(nVpn)`, `_GetReservedBlk`, log blocks) match
+  the design behind Rockbox's Nano 2G FTL. **Next step:** disassemble it to
+  learn the VFL context, map table and log block formats, then adapt
+  `ftl-nano2g.c`.
+
 ## Building
 
 ```sh

@@ -54,6 +54,7 @@
 #include "fmradio_i2c.h"
 #include "wmcodec.h"
 #include "nand-target.h"
+#include "samsung_yps3_usb.h"
 
 #define LONG_DELAY  200000
 #define SHORT_DELAY  50000
@@ -411,6 +412,38 @@ static void nand_addr_test(void)
     button_wait_press();
 }
 
+/* Serve NAND read requests from the PC until a key is pressed or the PC
+   sends the exit request. Entered when the first request arrives. */
+static void usbdump_mode(void)
+{
+    char str[40];
+    long next_update = 0;
+
+    lcd_clear_display();
+    lcd_puts(0, 0, "USB NAND dump mode");
+    lcd_puts(0, 1, "(read only)");
+    lcd_puts(0, 3, "press any key to leave");
+    lcd_update();
+
+    while (true) {
+        usbdump_poll();
+        if (usbdump_exit_requested()) {
+            break;
+        }
+        if (TIME_AFTER(current_tick, next_update)) {
+            next_update = current_tick + HZ / 2;
+            snprintf(str, sizeof(str), "requests: %u", usbdump_requests);
+            lcd_puts(0, 5, str);
+            lcd_update();
+            if (button_read_device() & BUTTON_MAIN) {
+                break;
+            }
+        }
+    }
+    while (button_read_device() & BUTTON_MAIN);
+    lcd_clear_display();
+}
+
 static void nand_probe(const unsigned int *ids)
 {
     struct nand_geometry geo;
@@ -602,11 +635,17 @@ void main(void)
         nand_ids[i] = nand_ll_read_id(i);
     }
 
+    usbdump_init(nand_ids);
+
     /* get rid of the logo and of start-up messages */
     lcd_clear_display();
 
     while (true)
     {
+        dbg_stage = 40;
+        if (usbdump_poll()) {
+            usbdump_mode();
+        }
         line = 1;
 
         dbg_stage = 41;
