@@ -56,6 +56,8 @@
 */
 
 #include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
 #include "config.h"
 #include "system.h"
 #include "panic.h"
@@ -371,7 +373,23 @@ static int ftl_open(void)
     return 0;
 }
 
+void ftl_ecc_selftest(void (*logf_fn)(const char *fmt, ...), int pages);
+bool ftl_dma_selftest(void (*logf_fn)(const char *fmt, ...));
+
 static int ftl_init_rc;
+static char selftest_log[2][80];
+static int selftest_n;
+
+static void selftest_logf(const char *fmt, ...)
+{
+    va_list ap;
+    if (selftest_n >= 2) {
+        return;
+    }
+    va_start(ap, fmt);
+    vsnprintf(selftest_log[selftest_n++], sizeof(selftest_log[0]), fmt, ap);
+    va_end(ap);
+}
 
 uint32_t ftl_init(void)
 {
@@ -391,6 +409,11 @@ uint32_t ftl_init(void)
         return 2;
     }
     ftl_ok = true;
+
+    /* DMA and ECC are only used if they work as expected on this unit */
+    selftest_n = 0;
+    ftl_dma_selftest(selftest_logf);
+    ftl_ecc_selftest(selftest_logf, 32);
     return 0;
 }
 
@@ -428,8 +451,45 @@ void ftl_ecc_selftest(void (*logf_fn)(const char *fmt, ...), int pages)
             if (memcmp(raw, ecc_sector, SECTOR_SIZE)) changed++;
         }
     }
-    logf_fn("ecc test: clean %d corrected %d failed %d changed %d",
-            clean, corrected, failed, changed);
+    /* a correctly driven engine finds few errors in valid data */
+    ftl_use_ecc = (clean > 0 && failed == 0 && corrected * 8 <= clean);
+    logf_fn("ecc test: clean %d corrected %d failed %d changed %d -> ecc %s",
+            clean, corrected, failed, changed, ftl_use_ecc ? "on" : "off");
+}
+
+/* Compares DMA and programmed I/O reads of some pages and enables DMA if
+   they match. Returns true if DMA is in use. */
+bool ftl_dma_selftest(void (*logf_fn)(const char *fmt, ...))
+{
+    static uint8_t pio[PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+    int p, same = 0, diff = 0, err = 0;
+
+    for (p = 0; p < 16; p++) {
+        unsigned int lbn = p;
+        uint16_t vb = ftl_map[lbn % FTL_MAP_CHUNKS][lbn / FTL_MAP_CHUNKS];
+        if (vb >= BLOCKS_PER_DIE / 2) {
+            continue;
+        }
+        unsigned int pblock = vfl_phys_block(p & 1, vb * 2 + ((p >> 1) & 1));
+        nand_ll_use_dma = false;
+        if (raw_read(p & 1, pblock, p, 0, pio, PAGE_SIZE)) {
+            err++;
+            continue;
+        }
+        nand_ll_use_dma = true;
+        if (raw_read(p & 1, pblock, p, 0, buf, PAGE_SIZE)) {
+            err++;
+            nand_ll_use_dma = false;
+            continue;
+        }
+        nand_ll_use_dma = false;
+        if (memcmp(pio, buf, PAGE_SIZE)) diff++;
+        else same++;
+    }
+    nand_ll_use_dma = (same > 0 && diff == 0 && err == 0);
+    logf_fn("dma test: same %d diff %d err %d -> dma %s", same, diff, err,
+            nand_ll_use_dma ? "on" : "off");
+    return nand_ll_use_dma;
 }
 
 void ftl_debug_log(void (*logf_fn)(const char *fmt, ...))
@@ -441,6 +501,9 @@ void ftl_debug_log(void (*logf_fn)(const char *fmt, ...))
         logf_fn("vfl die %d counter %lx meta0 %x remap %d", i,
                 (unsigned long)vfl_counter[i], vfl_meta[i][0],
                 vfl_remap_count[i]);
+    }
+    for (i = 0; i < selftest_n; i++) {
+        logf_fn("%s", selftest_log[i]);
     }
     logf_fn("ecc %d corrected %lu failed %lu", ftl_use_ecc, ecc_corrected,
             ecc_failed);

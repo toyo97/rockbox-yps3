@@ -25,6 +25,7 @@
 #include "s5l87xx.h"
 #include "nand-target.h"
 #include "storage.h"
+#include "sdram-target.h"
 #include <stdbool.h>
 
 /*  Driver for the S5L8700 flash memory controller for low-level access to the
@@ -198,6 +199,55 @@ unsigned int nand_ll_read_id(int bank)
     return nand_id;    
 }
 
+/*  DMA transfer of the data phase, set up like the original firmware does
+    (DMA channel 1, FMC data request). The FIFO hands out words with the
+    first byte in the most significant lane, which is exactly the memory
+    order of a big-endian word, so no swapping is needed. */
+bool nand_ll_use_dma = false;
+static unsigned char dma_bounce[4096] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+
+static int nand_read_dma(int bank, unsigned char *buf, unsigned int len)
+{
+    unsigned char *dst = buf;
+    long timeout = 1000000;
+
+    if (((unsigned int)buf & 15) || len > sizeof(dma_bounce)) {
+        dst = dma_bounce;
+        if (len > sizeof(dma_bounce)) {
+            return -1;
+        }
+    }
+
+    /* data phase with DMA requests enabled (FMCTRL0 bit 7) */
+    FMCTRL0 = 0x18a1 | (((1 << bank) & 3) << 1);
+
+    DMACOM1 = 7;
+    DMACON1 = 0x40880000;
+    /* the ARM940T only has index based cache operations, so the range
+       versions can't be used */
+    commit_discard_dcache();
+    DMABASE1 = (unsigned int)dst;
+    DMATCNT1 = (len >> 3) - 1;
+    FMDNUM = len - 1;
+    FMCTRL1 = FMCTRL1_DoReadData | 0x10;
+    DMACOM1 = 4;
+    while (!(DMAALLST & 0x10)) {
+        if (--timeout == 0) {
+            DMACOM1 = 7;
+            nand_chip_select(bank);
+            return -1;
+        }
+    }
+    DMACOM1 = 7;
+    FMCTRL1 = FMCTRL1_ClearRFIFO;
+    nand_chip_select(bank);
+    commit_discard_dcache();
+    if (dst != buf) {
+        memcpy(buf, dst, len);
+    }
+    return 0;
+}
+
 /*  Reads 'len' raw bytes (no ECC) of a page, starting at column 'col'.
     'len' should be a multiple of 4.
     This assumes a large page device (2 column + 3 row address cycles).
@@ -240,6 +290,10 @@ int nand_ll_read_raw(int bank, unsigned int page, unsigned int col,
     /* back to data output mode after polling the status */
     if (nand_send_cmd(NAND_CMD_READ)) {
         return -5;
+    }
+
+    if (nand_ll_use_dma && len >= 16 && (len % 16) == 0) {
+        return nand_read_dma(bank, buf, len) ? -7 : 0;
     }
 
     for (i = 0; i < len; i += count) {

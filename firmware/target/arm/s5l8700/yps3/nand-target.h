@@ -26,6 +26,8 @@
 void nand_ll_init(void);
 unsigned int nand_ll_read_id(int bank);
 int nand_ll_reset(int bank);
+/* use DMA for page data (off until validated by a self-test) */
+extern bool nand_ll_use_dma;
 
 /* hardware ECC: sector = true for a 512 byte sector, false for the 20
    metadata bytes. Returns <0 if uncorrectable, else corrected errors. */
