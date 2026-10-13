@@ -107,10 +107,13 @@ static uint16_t vfl_remap[DIES][256] SDRAM_BSS_ATTR; /* bad physical blocks */
 static uint16_t ftl_map[FTL_MAP_CHUNKS][FTL_MAP_ENTRIES] SDRAM_BSS_ATTR;
 static uint32_t ftl_lblocks;
 
+#define LOG_NONE 0xffff  /* page 255 is a valid log page */
+
 struct ftl_log {
     uint16_t vblock;
     uint16_t lbn;
-    uint8_t page[VPAGES_PER_VBLOCK];        /* log page of each page */
+    uint16_t page[VPAGES_PER_VBLOCK];       /* log page of each page,
+                                               LOG_NONE if not in the log */
     uint16_t valid[VPAGES_PER_VBLOCK];      /* sectors held by the log */
 };
 static struct ftl_log ftl_logs[FTL_LOGS] SDRAM_BSS_ATTR;
@@ -276,7 +279,7 @@ static int ftl_open_log(struct ftl_log *log)
 {
     unsigned int p, s;
 
-    memset(log->page, 0xff, sizeof(log->page));
+    memset(log->page, 0xff, sizeof(log->page));     /* LOG_NONE */
     memset(log->valid, 0, sizeof(log->valid));
 
     for (p = 0; p < VPAGES_PER_VBLOCK; p++) {
@@ -547,7 +550,7 @@ static uint32_t ftl_read_nand(uint32_t sector, uint32_t count, void *buffer)
         uint32_t vpn;
         unsigned int n;
 
-        if (log && log->page[vpage] != 0xff &&
+        if (log && log->page[vpage] != LOG_NONE &&
             (log->valid[vpage] & (1 << sec))) {
             vpn = log->vblock * VPAGES_PER_VBLOCK + log->page[vpage];
             n = 1;
@@ -571,7 +574,7 @@ static uint32_t ftl_read_nand(uint32_t sector, uint32_t count, void *buffer)
                long as none of them is held by the log */
             n = 1;
             while (n < count && ((sec + n) % 8) != 0 &&
-                   !(log && log->page[vpage] != 0xff &&
+                   !(log && log->page[vpage] != LOG_NONE &&
                      (log->valid[vpage] & (1 << (sec + n))))) {
                 n++;
             }

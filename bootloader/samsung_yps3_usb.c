@@ -76,7 +76,7 @@ static int lanes_swapped = -1;
 
 unsigned int usbdump_requests;
 
-static char bootlog_buf[2048];
+static char bootlog_buf[4096];
 static int bootlog_len;
 
 void bootlog(const char *fmt, ...)

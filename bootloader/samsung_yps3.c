@@ -781,6 +781,36 @@ static void audio_probe(void)
 }
 
 /* CRC-32 (zlib) of files read through the FTL, to compare with the PC */
+extern bool ftl_use_ecc;
+extern bool nand_ll_use_dma;
+
+static uint32_t crc32_buf(uint32_t crc, const unsigned char *p, int n)
+{
+    int k, b;
+    for (k = 0; k < n; k++) {
+        crc ^= p[k];
+        for (b = 0; b < 8; b++)
+            crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
+    }
+    return crc;
+}
+
+/* per-4 KiB CRCs of one file, with the current DMA/ECC settings */
+static void file_chunk_crcs(const char *name, const char *label)
+{
+    static unsigned char cbuf[4096] SDRAM_BSS_ATTR;
+    char line[200];
+    int fd = open(name, O_RDONLY), n, len = 0;
+    if (fd < 0) return;
+    len = snprintf(line, sizeof(line), "%s:", label);
+    while ((n = read(fd, cbuf, sizeof(cbuf))) > 0 && len < 180) {
+        len += snprintf(line + len, sizeof(line) - len, " %08lx",
+                        (unsigned long)~crc32_buf(0xFFFFFFFF, cbuf, n));
+    }
+    close(fd);
+    bootlog("%s", line);
+}
+
 static void file_crc_test(void)
 {
     static const char * const files[] = {
@@ -812,6 +842,17 @@ static void file_crc_test(void)
         }
         close(fd);
         bootlog("crc %08lx %ld %s", (unsigned long)~crc, total, files[i]);
+    }
+    {
+        bool ecc = ftl_use_ecc, dma = nand_ll_use_dma;
+        const char *f = "/.rockbox/icons/tango_icons.12x12.bmp";
+        file_chunk_crcs(f, "dma+ecc");
+        ftl_use_ecc = false;
+        nand_ll_use_dma = false;
+        /* drop cached sectors so the file is read again */
+        file_chunk_crcs(f, "pio");
+        ftl_use_ecc = ecc;
+        nand_ll_use_dma = dma;
     }
 }
 
@@ -1007,7 +1048,6 @@ void main(void)
         
     // FM power
     dbg_stage = 25;
-    tuner_probe();
     dbg_stage = 26;
     si4700_init();
     dbg_stage = 27;
@@ -1049,8 +1089,7 @@ void main(void)
     lcd_update();
     dbg_stage = 31;
     sdram_init();
-    clock_probe();
-    audio_probe();
+    clock_measure("clocks");
     sdram_mb = sdram_test();
     usbdump_sdram_mb = sdram_mb;
     bootlog("sdram %d MB", sdram_mb);
