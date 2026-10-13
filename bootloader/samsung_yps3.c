@@ -61,6 +61,31 @@
 #include "disk.h"
 #include "dir.h"
 #include "ftl-target.h"
+#include "rb-loader.h"
+#include "loader_strerror.h"
+
+/* Rockbox is linked to the start of the SDRAM; the bootloader keeps its
+   own buffers in the top MB */
+#define LOAD_ADDR       ((unsigned char *)SDRAM_BASE)
+#define LOAD_MAX_SIZE   (SDRAM_SIZE - 0x100000)
+
+/* jump to an image in SDRAM with interrupts, caches and MPU off */
+static void __attribute__((noreturn)) run_image(unsigned long addr)
+{
+    disable_irq();
+    commit_discard_idcache();
+    asm volatile(
+        "mrc p15, 0, r0, c1, c0, 0  \n"
+        "bic r0, r0, #0x1000        \n" /* I-cache */
+        "bic r0, r0, #0x5           \n" /* D-cache, protection unit */
+        "mcr p15, 0, r0, c1, c0, 0  \n"
+        "mov r0, #0                 \n"
+        "mcr p15, 0, r0, c7, c5, 0  \n" /* invalidate I-cache */
+        "mcr p15, 0, r0, c7, c6, 0  \n" /* invalidate D-cache */
+        "mov pc, %0                 \n"
+        : : "r"(addr) : "r0", "memory");
+    while (1);
+}
 
 #define LONG_DELAY  200000
 #define SHORT_DELAY  50000
@@ -445,21 +470,10 @@ static void usbdump_mode(void)
             while (TIME_BEFORE(current_tick, t)) {
                 usbdump_poll();
             }
-            disable_irq();
-            commit_discard_idcache();
-            /* The new image copies itself to IRAM with data accesses and
-               then executes it: turn off the caches and the protection
-               unit so it doesn't run stale instructions. */
-            asm volatile(
-                "mrc p15, 0, r0, c1, c0, 0  \n"
-                "bic r0, r0, #0x1000        \n" /* I-cache */
-                "bic r0, r0, #0x5           \n" /* D-cache, protection unit */
-                "mcr p15, 0, r0, c1, c0, 0  \n"
-                "mov r0, #0                 \n"
-                "mcr p15, 0, r0, c7, c5, 0  \n" /* invalidate I-cache */
-                "mcr p15, 0, r0, c7, c6, 0  \n" /* invalidate D-cache */
-                "mov pc, %0                 \n"
-                : : "r"(exec) : "r0", "memory");
+            /* An uploaded bootloader copies itself to IRAM with data
+               accesses and then executes it: run_image() turns off the
+               caches so that it doesn't run stale instructions. */
+            run_image(exec);
         }
         if (TIME_AFTER(current_tick, next_update)) {
             next_update = current_tick + HZ / 2;
@@ -475,8 +489,9 @@ static void usbdump_mode(void)
     lcd_clear_display();
 }
 
-/* Mount the FAT partitions through the FTL and list the root directory */
-static void fs_test(void)
+/* Mount the FAT partitions through the FTL and list the root directory.
+   Returns true if a filesystem was mounted. */
+static bool fs_test(void)
 {
     char str[48];
     int line = 0, rc;
@@ -518,6 +533,36 @@ static void fs_test(void)
     lcd_update();
     sleep(3 * HZ);
     lcd_clear_display();
+    return rc > 0;
+}
+
+/* Load and start Rockbox, unless a key is held */
+static void try_boot(void)
+{
+    char str[48];
+    int rc;
+
+    if (button_read_device() & BUTTON_MAIN) {
+        bootlog("key held, not booting");
+        return;
+    }
+    lcd_clear_display();
+    lcd_puts(0, 0, "Loading " BOOTFILE "...");
+    lcd_update();
+    rc = load_firmware(LOAD_ADDR, BOOTFILE, LOAD_MAX_SIZE);
+    if (rc <= 0) {
+        snprintf(str, sizeof(str), "load: %s", loader_strerror(rc));
+        bootlog("%s", str);
+        lcd_puts(0, 1, str);
+        lcd_update();
+        sleep(2 * HZ);
+        lcd_clear_display();
+        return;
+    }
+    bootlog("loaded %d bytes, starting", rc);
+    lcd_puts(0, 1, "starting");
+    lcd_update();
+    run_image((unsigned long)LOAD_ADDR);
 }
 
 static void nand_probe(const unsigned int *ids)
@@ -723,7 +768,10 @@ void main(void)
     bootlog("sdram %d MB", sdram_mb);
 
     dbg_stage = 32;
-    fs_test();
+    if (fs_test()) {
+        dbg_stage = 33;
+        try_boot();
+    }
 
     /* get rid of the logo and of start-up messages */
     lcd_clear_display();

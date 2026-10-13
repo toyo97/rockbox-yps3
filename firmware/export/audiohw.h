@@ -171,6 +171,8 @@ struct sound_settings_info
 #include "wm8978.h"
 #elif defined(HAVE_WM8975) || defined(HAVE_WM1870)
 #include "wm8975.h"
+#elif defined(HAVE_WM1800)
+#include "wm1800.h"
 #elif defined(HAVE_WM8985)
 #include "wm8985.h"
 #elif defined(HAVE_WM8758)

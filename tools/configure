@@ -571,6 +571,14 @@ arm940tbecc () {
  GCCOPTS="$CCOPTS -mbig-endian -mcpu=arm940t"
  GCCOPTIMIZE="-fomit-frame-pointer"
  endian="big"
+ # The toolchains have no big-endian libgcc, build one with
+ # tools/libgcc-be/build.sh and point LIBGCC_BE at its directory.
+ LIBGCC_BE="${LIBGCC_BE:-$HOME/.local/rockbox-libgcc-be}"
+ if [ ! -f "$LIBGCC_BE/libgcc.a" ]; then
+   echo "WARNING: no big-endian libgcc in $LIBGCC_BE, the link will fail."
+   echo "WARNING: build it with tools/libgcc-be/build.sh $LIBGCC_BE"
+ fi
+ GLOBAL_LDOPTS="$GLOBAL_LDOPTS -L$LIBGCC_BE"
 }
 
 arm940tcc () {
@@ -3254,17 +3262,16 @@ fi
    143|samsungyps3)
     target_id=72
     modelname="samsungyps3"
-    blonly="yes"
     target="SAMSUNG_YPS3"
     memory=32 # K4M561633G, 256 Mbit
     arm940tbecc
-    tool="cp"
     bmp2rb_mono="$rootdir/tools/bmp2rb -f 0"
     bmp2rb_native="$rootdir/tools/bmp2rb -f 4"
     output="rockbox.yps3"
     appextra="recorder:gui:radio"
     plugins="no" #FIXME
-    toolset=$genericbitmaptools
+    toolset=$scramblebitmaptools
+    tool="$rootdir/tools/scramble -add=yps3"
     boottool="cp"
     bootoutput="rockboot.ebn"
     # architecture, manufacturer and model for the target-tree build

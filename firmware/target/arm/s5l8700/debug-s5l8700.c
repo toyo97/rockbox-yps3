@@ -72,7 +72,9 @@ bool dbg_hw_info(void)
     lcd_clear_display();
     lcd_setfont(FONT_SYSFIXED);
 
+#ifdef IPOD_NANO2G
     state=0;
+#endif
     while(1)
     {
         lcd_clear_display();
@@ -168,11 +170,14 @@ bool dbg_hw_info(void)
 
 #else
         _DEBUG_PRINTF("dbg_hw_info");
+        _DEBUG_PRINTF("current_tick: %d", (unsigned int)current_tick);
+        (void)i;
 #endif
 
         lcd_update(); 
         switch(button_get_w_tmo(HZ/20))
         {
+#ifdef IPOD_NANO2G
             case BUTTON_SCROLL_BACK:
                 if(state!=0) state--;
                 break;
@@ -183,6 +188,7 @@ bool dbg_hw_info(void)
                     state++;
                 }
                 break;
+#endif
 
             case DEBUG_CANCEL:
             case BUTTON_REL:

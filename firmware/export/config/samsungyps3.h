@@ -12,13 +12,12 @@
 
 /* Define bitmask of input sources - recordable bitmask can be defined
    explicitly if different */
-#define INPUT_SRC_CAPS (SRC_CAP_MIC | SRC_CAP_LINEIN | SRC_CAP_FMRADIO)
+#define INPUT_SRC_CAPS (SRC_CAP_FMRADIO)
 
 /* define the bitmask of hardware sample rates */
 #define HW_SAMPR_CAPS   (SAMPR_CAP_88 | SAMPR_CAP_44 | SAMPR_CAP_22 | SAMPR_CAP_11)
 
 /* define the bitmask of recording sample rates */
-#define REC_SAMPR_CAPS  (SAMPR_CAP_88 | SAMPR_CAP_44 | SAMPR_CAP_22 | SAMPR_CAP_11)
 
 
 
@@ -89,7 +88,7 @@
 #define CONFIG_RTC RTC_S35390A
 
 /* Define the type of audio codec */
-//#define HAVE_WM....
+#define HAVE_WM1800
 
 /* Define this for LCD backlight available */
 #define HAVE_BACKLIGHT
@@ -149,7 +148,8 @@
 #define USB_PRODUCT_ID 0x5090
 
 /* Define this if you have adjustable CPU frequency */
-#define HAVE_ADJUSTABLE_CPU_FREQ
+/* TODO: needs SDRAM timings for the unboosted clock */
+//#define HAVE_ADJUSTABLE_CPU_FREQ
 
 #define BOOTFILE_EXT "yps3"
 #define BOOTFILE "rockbox." BOOTFILE_EXT

@@ -579,6 +579,8 @@ drivers/audio/wm8751.c
 drivers/audio/wm8978.c
 #elif defined(HAVE_WM8975) || defined(HAVE_WM1870)
 drivers/audio/wm8975.c
+#elif defined(HAVE_WM1800)
+drivers/audio/wm1800.c
 #elif defined(HAVE_WM8985)
 drivers/audio/wm8985.c
 #elif defined(HAVE_WM8758)
@@ -1927,6 +1929,11 @@ target/arm/s5l8700/yps3/nand-yps3.c
 target/arm/s5l8700/yps3/power-yps3.c
 target/arm/s5l8700/yps3/sdram-yps3.c
 target/arm/s5l8700/yps3/ftl-yps3.c
+#ifndef BOOTLOADER
+target/arm/s5l8700/yps3/audio-yps3.c
+target/arm/s5l8700/yps3/powermgmt-yps3.c
+target/arm/s5l8700/yps3/usb-yps3.c
+#endif
 #endif /* SAMSUNG_YPS3 */
 
 #ifdef PBELL_VIBE500

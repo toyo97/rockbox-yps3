@@ -145,7 +145,9 @@ def cmd_load(dev, args):
     Only works when the running bootloader has the SDRAM set up."""
     with open(args.image, "rb") as f:
         img = f.read()
-    addr = LOAD_ADDR
+    if img[4:8] == b"yps3":
+        img = img[8:]   # strip the "scramble -add" header of rockbox.yps3
+    addr = args.addr
     for off in range(0, len(img), 4096):
         chunk = img[off:off + 4096]
         a = addr + off
@@ -187,8 +189,11 @@ def main():
     s.add_argument("addr", type=lambda x: int(x, 0))
     s.add_argument("length", type=lambda x: int(x, 0))
     sub.add_parser("exit")
-    s = sub.add_parser("load")
+    s = sub.add_parser("load", help="upload an image to SDRAM and run it")
     s.add_argument("image")
+    s.add_argument("--addr", type=lambda x: int(x, 0), default=LOAD_ADDR,
+                   help="load address: 0x08100000 (default) for bootloader "
+                        "builds, 0x08000000 for rockbox.yps3")
     args = p.parse_args()
     dev = open_device()
     {"info": cmd_info, "page": cmd_page, "dump": cmd_dump,

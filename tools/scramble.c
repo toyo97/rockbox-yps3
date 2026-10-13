@@ -184,6 +184,8 @@ int main (int argc, char** argv)
             modelnum = 1;
         else if(!strcmp(&argv[1][5], "h300"))
             modelnum = 2;
+        else if(!strcmp(&argv[1][5], "yps3"))
+            modelnum = 53;
         else if(!strcmp(&argv[1][5], "ipco"))
             modelnum = 3;
         else if(!strcmp(&argv[1][5], "nano"))

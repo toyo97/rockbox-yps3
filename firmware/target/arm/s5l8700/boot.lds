@@ -100,9 +100,10 @@ SECTIONS
 
 #ifdef SAMSUNG_YPS3
   /* large buffers only used after sdram_init() */
-  .sdram (NOLOAD) : {
+  /* in the top MB, so that Rockbox can be loaded to the start of SDRAM */
+  .sdram (DRAMORIG + DRAMSIZE - 0x100000) (NOLOAD) : {
      *(.sdram*);
-  } > DRAM
+  }
 #endif
 
   /* The bss section is too large for IRAM on the Nano 2G, thanks to the FTL.
