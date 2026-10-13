@@ -37,6 +37,8 @@ uint32_t ftl_sync(void);
 uint32_t ftl_sector_count(void);
 /* writes internal state with the given printf-like function */
 void ftl_debug_log(void (*logf_fn)(const char *fmt, ...));
+void ftl_ecc_selftest(void (*logf_fn)(const char *fmt, ...), int pages);
+extern bool ftl_use_ecc;
 
 
 #endif

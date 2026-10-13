@@ -25,6 +25,7 @@
 #include "s5l87xx.h"
 #include "nand-target.h"
 #include "storage.h"
+#include <stdbool.h>
 
 /*  Driver for the S5L8700 flash memory controller for low-level access to the
     NAND flash of the Samsung YP-S3.
@@ -293,4 +294,52 @@ int nand_event(long id, intptr_t data)
                                            STORAGE_NAND);
     }
     return rc;
+}
+
+/*  Hardware ECC, used the way the original firmware's FIL does it:
+    each 512 byte sector has 9 ECC bytes in the spare area (from 0x28), and
+    the 20 metadata bytes at spare 12-31 have 9 ECC bytes at spare 2.
+    The engine corrects the buffer in place. Returns <0 if uncorrectable,
+    else the number of corrected errors (as reported by the engine). */
+
+#define ECC_SRCPND          (*(REG32_PTR_T)(0x39C00000))
+#define ECC_INTPND          (*(REG32_PTR_T)(0x39C00010))
+#define ECC_SIZE_SEL        (*(REG32_PTR_T)(ECC_BASE + 0x40))
+
+static unsigned char ecc_bytes[12] __attribute__((aligned(4)));
+
+static bool ecc_bytes_erased(const unsigned char *ecc)
+{
+    int i, zeros = 0;
+    for (i = 0; i < 9; i++) {
+        zeros += 8 - __builtin_popcount(ecc[i]);
+    }
+    return zeros < 4;   /* like the OF: an erased (or nearly) ECC field */
+}
+
+int nand_ll_ecc_correct(void *data, const unsigned char *ecc, bool sector)
+{
+    unsigned int result;
+    int timeout = 100000;
+
+    if (ecc_bytes_erased(ecc)) {
+        return 0;
+    }
+    memcpy(ecc_bytes, ecc, 9);
+    commit_dcache();
+
+    ECC_SRCPND = (1 << 19);
+    ECC_INTPND = (1 << 19);
+    ECC_DATA_PTR = (unsigned int)data;
+    ECC_SPARE_PTR = (unsigned int)ecc_bytes;
+    ECC_CTRL = ECCCTRL_STARTDECODING;
+    ECC_SIZE_SEL = sector ? 1 : 0;
+    while (!(ECC_SRCPND & (1 << 19)) && --timeout);
+
+    commit_discard_dcache();
+    result = ECC_RESULT;
+    if (result & 1) {
+        return -1;
+    }
+    return (result & 0xf) >> 1;
 }

@@ -116,6 +116,12 @@ static int ftl_nlogs;
 
 static bool ftl_ok = false;
 
+/* hardware ECC, off until validated on hardware (see ftl_ecc_selftest) */
+bool ftl_use_ecc = false;
+static uint8_t ecc_sector[SECTOR_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(4)));
+static uint8_t ecc_spare[0x28 + 8 * 9] __attribute__((aligned(4)));
+static unsigned long ecc_corrected, ecc_failed;
+
 /* low level */
 
 static int raw_read(int die, unsigned int block, unsigned int page,
@@ -147,9 +153,35 @@ static int vfl_read(uint32_t vpn, unsigned int offset, void *dst,
     int die = rest & 1;
     unsigned int page = rest >> 1;
     unsigned int plane = offset / PAGE_SIZE;
+    unsigned int pblock = vfl_phys_block(die, vblock * 2 + plane);
+    unsigned int col = offset % PAGE_SIZE;
 
-    return raw_read(die, vfl_phys_block(die, vblock * 2 + plane), page,
-                    offset % PAGE_SIZE, dst, len);
+    if (!ftl_use_ecc || (col % SECTOR_SIZE) || (len % SECTOR_SIZE)) {
+        return raw_read(die, pblock, page, col, dst, len);
+    }
+
+    /* whole sectors: read them and their ECC bytes, then correct */
+    unsigned int first = col / SECTOR_SIZE, n = len / SECTOR_SIZE, i;
+    if (raw_read(die, pblock, page, PAGE_SIZE, ecc_spare, sizeof(ecc_spare))) {
+        return -1;
+    }
+    for (i = 0; i < n; i++) {
+        uint8_t *d = (uint8_t *)dst + i * SECTOR_SIZE;
+        if (raw_read(die, pblock, page, col + i * SECTOR_SIZE, ecc_sector,
+                     SECTOR_SIZE)) {
+            return -1;
+        }
+        int rc = nand_ll_ecc_correct(ecc_sector,
+                                     &ecc_spare[0x28 + 9 * (first + i)], true);
+        if (rc < 0) {
+            ecc_failed++;
+        }
+        else if (rc > 0) {
+            ecc_corrected++;
+        }
+        memcpy(d, ecc_sector, SECTOR_SIZE);
+    }
+    return 0;
 }
 
 /* spare bytes 0-31 of plane 0 of a virtual page */
@@ -362,6 +394,44 @@ uint32_t ftl_init(void)
     return 0;
 }
 
+/* Decodes the sectors of 'pages' data pages with the ECC engine and counts
+   what it reports, without using the result. Reading valid data, a correctly
+   driven engine reports (almost) no errors. */
+void ftl_ecc_selftest(void (*logf_fn)(const char *fmt, ...), int pages)
+{
+    static uint8_t raw[SECTOR_SIZE] __attribute__((aligned(4)));
+    int clean = 0, corrected = 0, failed = 0, changed = 0, p, s;
+
+    for (p = 0; p < pages; p++) {
+        /* first pages of the first logical blocks, plane 0 of die 0 */
+        unsigned int lbn = p / 4;
+        uint16_t vb = ftl_map[lbn % FTL_MAP_CHUNKS][lbn / FTL_MAP_CHUNKS];
+        unsigned int page = 8 + (p % 4) * 16;
+        if (vb >= BLOCKS_PER_DIE / 2) {
+            continue;
+        }
+        unsigned int pblock = vfl_phys_block(0, vb * 2);
+        if (raw_read(0, pblock, page, PAGE_SIZE, ecc_spare, sizeof(ecc_spare))) {
+            continue;
+        }
+        for (s = 0; s < 8; s++) {
+            if (raw_read(0, pblock, page, s * SECTOR_SIZE, ecc_sector,
+                         SECTOR_SIZE)) {
+                continue;
+            }
+            memcpy(raw, ecc_sector, SECTOR_SIZE);
+            int rc = nand_ll_ecc_correct(ecc_sector, &ecc_spare[0x28 + 9 * s],
+                                         true);
+            if (rc < 0) failed++;
+            else if (rc > 0) corrected++;
+            else clean++;
+            if (memcmp(raw, ecc_sector, SECTOR_SIZE)) changed++;
+        }
+    }
+    logf_fn("ecc test: clean %d corrected %d failed %d changed %d",
+            clean, corrected, failed, changed);
+}
+
 void ftl_debug_log(void (*logf_fn)(const char *fmt, ...))
 {
     int i;
@@ -372,6 +442,8 @@ void ftl_debug_log(void (*logf_fn)(const char *fmt, ...))
                 (unsigned long)vfl_counter[i], vfl_meta[i][0],
                 vfl_remap_count[i]);
     }
+    logf_fn("ecc %d corrected %lu failed %lu", ftl_use_ecc, ecc_corrected,
+            ecc_failed);
     logf_fn("map %x %x %x %x logs %d first %x/%x", ftl_map[0][0],
             ftl_map[1][0], ftl_map[2][0], ftl_map[3][0], ftl_nlogs,
             ftl_logs[0].vblock, ftl_logs[0].lbn);

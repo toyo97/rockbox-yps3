@@ -507,6 +507,9 @@ static bool fs_test(void)
     lcd_puts(0, line++, str);
     bootlog("%s", str);
     ftl_debug_log(bootlog);
+    if (rc == 0) {
+        ftl_ecc_selftest(bootlog, 64);
+    }
     lcd_update();
     if (rc == 0) {
         filesystem_init();

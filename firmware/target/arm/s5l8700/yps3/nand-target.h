@@ -27,6 +27,10 @@ void nand_ll_init(void);
 unsigned int nand_ll_read_id(int bank);
 int nand_ll_reset(int bank);
 
+/* hardware ECC: sector = true for a 512 byte sector, false for the 20
+   metadata bytes. Returns <0 if uncorrectable, else corrected errors. */
+int nand_ll_ecc_correct(void *data, const unsigned char *ecc, bool sector);
+
 /* used by the generic S5L8700 storage glue */
 void nand_set_active(void);
 long nand_last_activity(void);
