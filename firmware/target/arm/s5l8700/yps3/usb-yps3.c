@@ -74,6 +74,7 @@
 #define ECR_STALL           (1 << 1)
 #define ECR_FLUSH           (1 << 6)
 
+#define USB_FC_REG(o)       (*(REG32_PTR_T)(USB_FC_BASE + (o)))
 #define USB_PHY_REG(o)      (*(REG32_PTR_T)(0x3C400000 + (o)))
 #define EP_FIRST_IN         1
 #define EP_FIFO(n)          (*(REG32_PTR_T)(USB_FC_BASE + 0x60 + 4 * (n)))
@@ -371,11 +372,15 @@ static void udc_setup(void)
     USB_EP0CR = 0;
     USB_IR = 0;
     USB_MPR = EP0_MPS;
+    /* per endpoint, like the original firmware: packet size, then two
+       undocumented registers (0x84: 0x38 for its bulk endpoints, 0x1c for
+       the interrupt ones; 0x40: 0). Without them bulk OUT data never
+       arrives. */
     for (n = 1; n < USB_NUM_ENDPOINTS; n++) {
-        if (ep_mps_set[n]) {
-            USB_IR = n;
-            USB_MPR = ep_mps(n);
-        }
+        USB_IR = n;
+        USB_MPR = ep_mps_set[n] ? ep_mps(n) : (n < 5 ? 512 : 64);
+        USB_FC_REG(0x84) = (n < 5) ? 0x38 : 0x1c;
+        USB_FC_REG(0x40) = 0;
     }
     USB_IR = 0;
     USB_EIER = eier_mask;
@@ -509,6 +514,8 @@ void usb_drv_ep_init(const struct usb_drv_ep_alloc_ctx* ctx, int ep)
     dbg_ev("N", ep & 0xff);
     USB_IR = n;
     USB_MPR = ep_mps(n);
+    USB_FC_REG(0x84) = (n < 5) ? 0x38 : 0x1c;
+    USB_FC_REG(0x40) = 0;
     USB_ECR = ECR_FLUSH;
     USB_ECR = 0;
     ep_mps_set[n] = 1;
