@@ -41,10 +41,12 @@
 */
 
 static volatile int locked = 0;
+#ifndef SAMSUNG_YPS3
 static const int zerosample = 0;
 static unsigned char dblbuf[1024] IBSS_ATTR;
 static const void* queuedbuf;
 static size_t queuedsize;
+#endif
 static const void* nextbuf;
 static size_t nextsize;
 
@@ -98,6 +100,38 @@ static void sink_unlock(void)
     }
 }
 
+#ifdef SAMSUNG_YPS3
+/*  On the YP-S3 (S5L8700), writing DMABASE0/DMATCNT0 and DMACOM0 = 4 while a
+    transfer runs restarts the channel instead of queueing the next transfer
+    (measured), so each chunk is started from the completion interrupt. The
+    I2S FIFO covers the interrupt latency. */
+#define DMA_CHUNK_MAX   0x10000
+
+static void dma_start_chunk(void)
+{
+    size_t n = MIN(nextsize, DMA_CHUNK_MAX);
+    DMABASE0 = (unsigned int)nextbuf;
+    DMATCNT0 = n / 2 - 1;
+    nextbuf += n;
+    nextsize -= n;
+    commit_dcache();
+    DMACOM0 = 4;
+}
+
+void INT_DMA(void) ICODE_ATTR;
+void INT_DMA(void)
+{
+    DMACOM0 = 7;    /* clear the completion interrupt */
+    if (!nextsize) {
+        if (!pcm_play_dma_complete_callback(PCM_DMAST_OK, &nextbuf, &nextsize))
+            return;
+        dma_start_chunk();
+        pcm_play_dma_status_callback(PCM_DMAST_STARTED);
+        return;
+    }
+    dma_start_chunk();
+}
+#else
 void INT_DMA(void) ICODE_ATTR;
 void INT_DMA(void)
 {
@@ -141,15 +175,22 @@ void INT_DMA(void)
 
 }
 
+#endif /* SAMSUNG_YPS3 */
+
 static void sink_dma_start(const void* addr, size_t size)
 {
     /* DMA channel on */
     nextbuf = addr;
     nextsize = size;
+#ifdef SAMSUNG_YPS3
+    DMACOM0 = 7;
+    dma_start_chunk();
+#else
     queuedsize = 0;
     DMABASE0 = (unsigned int)(&zerosample);
     DMATCNT0 = 0;
     DMACOM0 = 4;
+#endif
 
     /* IIS Tx clock on */
     I2SCLKCON = (1 << 0);   /* 1 = power on */

@@ -724,13 +724,56 @@ static void audio_measure(const char *label, int p, int m, int sd, int cdiv,
             ms ? (unsigned long)(sizeof(audio_buf) / 4) * 1000 / ms : 0, st);
 }
 
+/* Does writing DMABASE0/DMATCNT0 + DMACOM0 = 4 while a transfer runs
+   queue a second transfer (like pcm-s5l8700.c assumes), or restart? */
+static void audio_queue_test(void)
+{
+    unsigned last, f, ms = 0;
+    unsigned long con_a, con_b, con_c, cnt_b, st = 0;
+    long t;
+    const unsigned half = sizeof(audio_buf) / 2;     /* bytes per part */
+
+    I2STXCOM = 0x8;
+    DMACOM0 = 5;
+    DMACON0 = (0 << 30) | (1 << 29) | (1 << 22) | (1 << 16);
+    DMACOM0 = 7;
+    DMABASE0 = (unsigned int)audio_buf;
+    DMATCNT0 = half / 2 - 1;
+    commit_dcache();
+    last = USB_FNR & 0x7FF;
+    DMACOM0 = 4;
+    I2STXCOM = (1 << 3) | (1 << 2) | (1 << 1);
+    con_a = DMACON0;
+    /* ~10 ms later, queue the second half */
+    t = current_tick + 2;
+    while (TIME_BEFORE(current_tick, t));
+    cnt_b = DMACTCNT0;
+    DMABASE0 = (unsigned int)audio_buf + half;
+    DMATCNT0 = half / 2 - 1;
+    DMACOM0 = 4;
+    con_b = DMACON0;
+    while (ms < 3000) {
+        st = DMAALLST;
+        if (st & 1) break;
+        f = USB_FNR & 0x7FF;
+        ms += (f - last) & 0x7FF;
+        last = f;
+    }
+    con_c = DMACON0;
+    I2STXCOM = 0x8;
+    DMACOM0 = 5;
+    bootlog("audio queue: con %08lx -> %08lx -> %08lx, ctcnt %lu at 20 ms, "
+            "first WCOM after %u ms (one part = %u ms), DMACTCNT0 %lu",
+            con_a, con_b, con_c, cnt_b, ms,
+            (unsigned)(half / 4 * 1000 / 44100), (unsigned long)DMACTCNT0);
+}
+
 static void audio_probe(void)
 {
     PCON7 = (PCON7 & ~(0x0FFFFF00)) | 0x02222200;
     memset(audio_buf, 0, sizeof(audio_buf));
     audio_measure("rockbox 44.1", 37, 151, 1, 9, 0x00000301);
-    audio_measure("bclk 2", 37, 151, 1, 9, 0x00000311);
-    audio_measure("cdiv 1", 37, 151, 1, 1, 0x00000301);
+    audio_queue_test();
 }
 
 static void try_boot(void)
