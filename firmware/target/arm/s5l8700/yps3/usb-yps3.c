@@ -350,6 +350,11 @@ static void ep_out_drain(int n)
         fifo_read(n, ep->buf + ep->cnt, bytes, room);
         USB_ESR = ESR_RX_SUCCESS;
         dbg_ev("O", (n << 12) | bytes);
+        if (bytes >= 4 && room >= 4) {
+            unsigned char *b = ep->buf + ep->cnt;
+            dbg_ev("o", ((unsigned long)b[0] << 24) | (b[1] << 16) |
+                        (b[2] << 8) | b[3]);
+        }
         ep->cnt += MIN(bytes, room);
         if (ep->cnt >= ep->len || bytes < mps)
             ep_complete(n, DIR_OUT, 0);
