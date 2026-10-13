@@ -32,6 +32,7 @@ extern bool nand_ll_use_dma;
 /* hardware ECC: sector = true for a 512 byte sector, false for the 20
    metadata bytes. Returns <0 if uncorrectable, else corrected errors. */
 int nand_ll_ecc_correct(void *data, const unsigned char *ecc, bool sector);
+int nand_ll_ecc_encode(const void *data, unsigned char *ecc, int size_sel);
 
 /* used by the generic S5L8700 storage glue */
 void nand_set_active(void);

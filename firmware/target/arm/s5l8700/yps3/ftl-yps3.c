@@ -377,16 +377,17 @@ static int ftl_open(void)
 }
 
 void ftl_ecc_selftest(void (*logf_fn)(const char *fmt, ...), int pages);
+void ftl_ecc_encode_selftest(void (*logf_fn)(const char *fmt, ...), int pages);
 bool ftl_dma_selftest(void (*logf_fn)(const char *fmt, ...));
 
 static int ftl_init_rc;
-static char selftest_log[2][80];
+static char selftest_log[4][80];
 static int selftest_n;
 
 static void selftest_logf(const char *fmt, ...)
 {
     va_list ap;
-    if (selftest_n >= 2) {
+    if (selftest_n >= 4) {
         return;
     }
     va_start(ap, fmt);
@@ -418,6 +419,9 @@ uint32_t ftl_init(void)
 #ifndef YPS3_NO_SELFTEST
     ftl_dma_selftest(selftest_logf);
     ftl_ecc_selftest(selftest_logf, 32);
+#ifdef BOOTLOADER
+    ftl_ecc_encode_selftest(selftest_logf, 8);
+#endif
 #endif
     return 0;
 }
@@ -460,6 +464,57 @@ void ftl_ecc_selftest(void (*logf_fn)(const char *fmt, ...), int pages)
     ftl_use_ecc = (clean > 0 && failed == 0 && corrected * 8 <= clean);
     logf_fn("ecc test: clean %d corrected %d failed %d changed %d -> ecc %s",
             clean, corrected, failed, changed, ftl_use_ecc ? "on" : "off");
+}
+
+/* Encodes sectors and metadata already on the flash and compares the ECC
+   with what the original firmware stored, for both SIZE_SEL values.
+   Read only: validates the encoder needed for writing. */
+void ftl_ecc_encode_selftest(void (*logf_fn)(const char *fmt, ...), int pages)
+{
+    static uint8_t meta[32] __attribute__((aligned(16)));
+    unsigned char e[9];
+    int n = 0, s0 = 0, s1 = 0, nm = 0, m0 = 0, m1 = 0, p, s;
+    unsigned char first[9] = {0}, firstgot[9] = {0};
+
+    for (p = 0; p < pages; p++) {
+        unsigned int lbn = p / 4;
+        uint16_t vb = ftl_map[lbn % FTL_MAP_CHUNKS][lbn / FTL_MAP_CHUNKS];
+        unsigned int page = 8 + (p % 4) * 16;
+        if (vb >= BLOCKS_PER_DIE / 2)
+            continue;
+        unsigned int pblock = vfl_phys_block(0, vb * 2);
+        if (raw_read(0, pblock, page, PAGE_SIZE, ecc_spare, sizeof(ecc_spare)))
+            continue;
+        /* metadata: spare 12..31, its ECC at spare 2..10 */
+        memcpy(meta, &ecc_spare[12], 20);
+        nm++;
+        if (!nand_ll_ecc_encode(meta, e, 0) && !memcmp(e, &ecc_spare[2], 9))
+            m0++;
+        if (!nand_ll_ecc_encode(meta, e, 1) && !memcmp(e, &ecc_spare[2], 9))
+            m1++;
+        for (s = 0; s < 8; s++) {
+            if (raw_read(0, pblock, page, s * SECTOR_SIZE, ecc_sector,
+                         SECTOR_SIZE))
+                continue;
+            n++;
+            if (!nand_ll_ecc_encode(ecc_sector, e, 0) &&
+                !memcmp(e, &ecc_spare[0x28 + 9 * s], 9))
+                s0++;
+            if (!nand_ll_ecc_encode(ecc_sector, e, 1)) {
+                if (!memcmp(e, &ecc_spare[0x28 + 9 * s], 9))
+                    s1++;
+                if (n == 1) {
+                    memcpy(first, &ecc_spare[0x28], 9);
+                    memcpy(firstgot, e, 9);
+                }
+            }
+        }
+    }
+    logf_fn("ecc enc: sectors %d sel0 %d sel1 %d; meta %d sel0 %d sel1 %d",
+            n, s0, s1, nm, m0, m1);
+    logf_fn("ecc enc first: stored %02x%02x%02x%02x got %02x%02x%02x%02x",
+            first[0], first[1], first[2], first[3],
+            firstgot[0], firstgot[1], firstgot[2], firstgot[3]);
 }
 
 /* Compares DMA and programmed I/O reads of some pages and enables DMA if

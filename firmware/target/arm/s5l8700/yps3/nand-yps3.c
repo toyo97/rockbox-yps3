@@ -400,3 +400,28 @@ int nand_ll_ecc_correct(void *data, const unsigned char *ecc, bool sector)
     }
     return (result & 0xf) >> 1;
 }
+
+/*  ECC encoding, for writing: like the original firmware's page program,
+    CTRL = 2 starts encoding 'data' (a 512 byte sector or the 20 metadata
+    bytes, chosen with SIZE_SEL) and the engine stores the 9 ECC bytes at
+    the spare pointer. Validated against ECC bytes already on the flash
+    (ftl_ecc_encode_selftest) before it is used. */
+static unsigned char ecc_out[16] __attribute__((aligned(16)));
+
+int nand_ll_ecc_encode(const void *data, unsigned char *ecc, int size_sel)
+{
+    int timeout = 100000;
+
+    commit_dcache();
+    ECC_SRCPND = (1 << 19);
+    ECC_INTPND = (1 << 19);
+    ECC_DATA_PTR = (unsigned int)data;
+    ECC_SPARE_PTR = (unsigned int)ecc_out;
+    ECC_CTRL = 2;
+    ECC_SIZE_SEL = size_sel;
+    for (volatile int i = 0; i < 1000; i++);
+    while (!(ECC_SRCPND & (1 << 19)) && --timeout);
+    commit_discard_dcache();
+    memcpy(ecc, ecc_out, 9);
+    return timeout ? 0 : -1;
+}
