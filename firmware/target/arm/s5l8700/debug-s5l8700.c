@@ -20,6 +20,8 @@
 
 #include <stdbool.h>
 #include "config.h"
+#include "adc.h"
+#include "power.h"
 #include "system.h"
 #include "kernel.h"
 #include "button.h"
@@ -171,7 +173,17 @@ bool dbg_hw_info(void)
 #else
         _DEBUG_PRINTF("dbg_hw_info");
         _DEBUG_PRINTF("current_tick: %d", (unsigned int)current_tick);
+#ifdef SAMSUNG_YPS3
+        for (i = 0; i < 4; i++) {
+            _DEBUG_PRINTF("ADC %d: %4d", i, adc_read(i));
+        }
+        _DEBUG_PRINTF("USB power: %s", (PDAT1 & 2) ? "yes" : "no");
+        _DEBUG_PRINTF("P5: %02x (charging %s)", (unsigned)PDAT5,
+                      charging_state() ? "yes" : "no");
+        _DEBUG_PRINTF("CPU: %ld MHz", cpu_frequency / 1000000);
+#else
         (void)i;
+#endif
 #endif
 
         lcd_update(); 
