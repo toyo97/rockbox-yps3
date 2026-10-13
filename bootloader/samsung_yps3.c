@@ -59,6 +59,7 @@
 #include "file_internal.h"
 #include "storage.h"
 #include "disk.h"
+#include "file.h"
 #include "dir.h"
 #include "ftl-target.h"
 #include "rb-loader.h"
@@ -779,6 +780,41 @@ static void audio_probe(void)
     audio_queue_test();
 }
 
+/* CRC-32 (zlib) of files read through the FTL, to compare with the PC */
+static void file_crc_test(void)
+{
+    static const char * const files[] = {
+        "/.rockbox/icons/tango_icons.12x12.bmp",
+        "/.rockbox/icons/tango_icons_viewers.12x12.bmp",
+        "/.rockbox/icons/viewers.6x8x16.bmp",
+        "/.rockbox/codecs/mpa.codec",
+        "/.rockbox/rockbox.yps3",
+    };
+    static unsigned char fbuf[4096] SDRAM_BSS_ATTR;
+    unsigned i;
+
+    for (i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        int fd = open(files[i], O_RDONLY);
+        uint32_t crc = 0xFFFFFFFF;
+        long total = 0;
+        int n, k, b;
+        if (fd < 0) {
+            bootlog("crc %s: open %d", files[i], fd);
+            continue;
+        }
+        while ((n = read(fd, fbuf, sizeof(fbuf))) > 0) {
+            for (k = 0; k < n; k++) {
+                crc ^= fbuf[k];
+                for (b = 0; b < 8; b++)
+                    crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
+            }
+            total += n;
+        }
+        close(fd);
+        bootlog("crc %08lx %ld %s", (unsigned long)~crc, total, files[i]);
+    }
+}
+
 static void try_boot(void)
 {
     char str[48];
@@ -1021,6 +1057,7 @@ void main(void)
 
     dbg_stage = 32;
     if (fs_test()) {
+        file_crc_test();
         dbg_stage = 33;
         try_boot();
     }

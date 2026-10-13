@@ -181,6 +181,8 @@ bool dbg_hw_info(void)
         _DEBUG_PRINTF("P5: %02x (charging %s)", (unsigned)PDAT5,
                       charging_state() ? "yes" : "no");
         _DEBUG_PRINTF("CPU: %ld MHz", cpu_frequency / 1000000);
+        _DEBUG_PRINTF("P5.2 %d P5.3 %d (left/right toggle)",
+                      (PDAT5 >> 2) & 1, (PDAT5 >> 3) & 1);
 #else
         (void)i;
 #endif
@@ -202,6 +204,14 @@ bool dbg_hw_info(void)
                 break;
 #endif
 
+#ifdef SAMSUNG_YPS3
+            case BUTTON_LEFT:
+                PDAT5 ^= (1 << 2);
+                break;
+            case BUTTON_RIGHT:
+                PDAT5 ^= (1 << 3);
+                break;
+#endif
             case DEBUG_CANCEL:
             case BUTTON_REL:
                 lcd_setfont(FONT_UI);
