@@ -95,10 +95,12 @@
 #define HAVE_BACKLIGHT_BRIGHTNESS
 
 /* Define this if you have a software controlled poweroff */
-#define YPS3_DEBUG_POWEROFF
 
-/* the FTL driver can't write yet */
+/* the FTL driver can't write yet: the bootloader refuses file writes,
+   Rockbox keeps them in a RAM overlay (lost at power off) */
+#ifdef BOOTLOADER
 #define STORAGE_READ_ONLY
+#endif
 #define HAVE_SW_POWEROFF
 
 /* The number of bytes reserved for loadable codecs */

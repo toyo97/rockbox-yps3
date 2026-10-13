@@ -530,7 +530,7 @@ static const struct ftl_log *ftl_find_log(unsigned int lbn)
     return NULL;
 }
 
-uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
+static uint32_t ftl_read_nand(uint32_t sector, uint32_t count, void *buffer)
 {
     uint8_t *dst = buffer;
 
@@ -587,13 +587,85 @@ uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
     return 0;
 }
 
+#ifdef BOOTLOADER
+uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
+{
+    return ftl_read_nand(sector, count, buffer);
+}
+
 uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
 {
     (void)sector;
     (void)count;
     (void)buffer;
-    return 1;   /* read only for now */
+    return 1;   /* read only */
 }
+#else
+/*  Until the FTL can write, writes go to a RAM overlay and are lost at power
+    off: nothing is ever written to the flash. This is enough for settings,
+    the playlist control file and other small files during a session. */
+#define OVL_SLOTS   2048                /* 1 MiB of sectors */
+#define OVL_HASH    (OVL_SLOTS * 2)     /* power of two */
+static uint32_t ovl_key[OVL_HASH];      /* sector + 1, 0 = empty */
+static uint16_t ovl_slot[OVL_HASH];
+static uint8_t ovl_data[OVL_SLOTS][SECTOR_SIZE] __attribute__((aligned(16)));
+static unsigned int ovl_used;
+
+static int ovl_find(uint32_t sector, bool create)
+{
+    unsigned int h = (sector * 2654435761u) & (OVL_HASH - 1);
+
+    while (ovl_key[h]) {
+        if (ovl_key[h] == sector + 1) {
+            return ovl_slot[h];
+        }
+        h = (h + 1) & (OVL_HASH - 1);
+    }
+    if (!create || ovl_used >= OVL_SLOTS) {
+        return -1;
+    }
+    ovl_key[h] = sector + 1;
+    ovl_slot[h] = ovl_used;
+    return ovl_used++;
+}
+
+uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
+{
+    uint8_t *dst = buffer;
+    uint32_t rc, i;
+
+    rc = ftl_read_nand(sector, count, buffer);
+    if (rc || !ovl_used) {
+        return rc;
+    }
+    for (i = 0; i < count; i++) {
+        int slot = ovl_find(sector + i, false);
+        if (slot >= 0) {
+            memcpy(dst + i * SECTOR_SIZE, ovl_data[slot], SECTOR_SIZE);
+        }
+    }
+    return 0;
+}
+
+uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
+{
+    const uint8_t *src = buffer;
+
+    if (!ftl_ok || sector + count > ftl_sector_count()) {
+        return 1;
+    }
+    while (count--) {
+        int slot = ovl_find(sector, true);
+        if (slot < 0) {
+            return 2;   /* overlay full */
+        }
+        memcpy(ovl_data[slot], src, SECTOR_SIZE);
+        src += SECTOR_SIZE;
+        sector++;
+    }
+    return 0;
+}
+#endif
 
 uint32_t ftl_sync(void)
 {
