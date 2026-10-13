@@ -67,6 +67,7 @@ static const unsigned int *nand_ids;
 static int lanes_swapped = -1;
 
 unsigned int usbdump_requests;
+int usbdump_sdram_mb = -1;
 static int exit_requested;
 
 static const unsigned char device_desc[18] = {
@@ -221,8 +222,8 @@ static void handle_setup(void)
         switch (req) {
         case REQ_INFO: {
             int n = snprintf((char *)buf, sizeof(buf),
-                             "YPS3DUMP 1 lanes=%d reqs=%u", lanes_swapped,
-                             usbdump_requests);
+                             "YPS3DUMP 1 lanes=%d reqs=%u sdram=%dMB",
+                             lanes_swapped, usbdump_requests, usbdump_sdram_mb);
             ep0_send(buf, n, length);
             return;
         }

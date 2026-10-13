@@ -23,5 +23,6 @@ void usbdump_init(const unsigned int *ids);
 int usbdump_poll(void);
 int usbdump_exit_requested(void);
 extern unsigned int usbdump_requests;
+extern int usbdump_sdram_mb;
 
 #endif

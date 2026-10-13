@@ -55,6 +55,7 @@
 #include "wmcodec.h"
 #include "nand-target.h"
 #include "samsung_yps3_usb.h"
+#include "sdram-target.h"
 
 #define LONG_DELAY  200000
 #define SHORT_DELAY  50000
@@ -536,6 +537,7 @@ void main(void)
     unsigned int fm_frequency = 100700000;
     int audiovol = 0x60;
     unsigned nand_ids[4];
+    int sdram_mb;
     
     // enable all peripherals
     PWRCON = 0;
@@ -636,6 +638,13 @@ void main(void)
     }
 
     usbdump_init(nand_ids);
+
+    dbg_stage = 31;
+    lcd_puts(0, 1, "SDRAM init + test...");
+    lcd_update();
+    sdram_init();
+    sdram_mb = sdram_test();
+    usbdump_sdram_mb = sdram_mb;
 
     /* get rid of the logo and of start-up messages */
     lcd_clear_display();
@@ -801,6 +810,9 @@ void main(void)
 #endif
 
         dbg_stage = 53;
+        snprintf(mystring, 64, "SDRAM: %d MB OK", sdram_mb);
+        lcd_puts(0, line++, mystring);
+
 #if 1   /* button info */
         snprintf(mystring, 64, "BUTTONS %08X, %s", button_read_device(),
                  headphones_inserted() ? "HP" : "hp");
