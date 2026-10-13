@@ -175,9 +175,11 @@ bool dbg_hw_info(void)
         _DEBUG_PRINTF("dbg_hw_info");
         _DEBUG_PRINTF("current_tick: %d", (unsigned int)current_tick);
 #ifdef SAMSUNG_YPS3
+#ifndef HAVE_USBSTACK
         for (i = 0; i < 4; i++) {
             _DEBUG_PRINTF("ADC %d: %4d", i, adc_read(i));
         }
+#endif
         _DEBUG_PRINTF("USB power: %s", (PDAT1 & 2) ? "yes" : "no");
         _DEBUG_PRINTF("P5: %02x (charging %s)", (unsigned)PDAT5,
                       charging_state() ? "yes" : "no");
@@ -187,7 +189,7 @@ bool dbg_hw_info(void)
             extern unsigned long usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups,
                 usb_dbg_inits, usb_dbg_last_ssr, usb_dbg_last_ep0sr;
             extern int usb_dbg_variant, usb_dbg_ev_n;
-            extern char usb_dbg_ev[24][12];
+            extern char usb_dbg_ev[64][10];
             int k;
             _DEBUG_PRINTF("var %d init %lu irq %lu", usb_dbg_variant,
                           usb_dbg_inits, usb_dbg_irqs);
@@ -197,14 +199,13 @@ bool dbg_hw_info(void)
             _DEBUG_PRINTF("EIR %03lx EIER %03lx", (unsigned long)USB_EIR & 0x1ff,
                           (unsigned long)USB_EIER & 0x1ff);
             _DEBUG_PRINTF("INTMSK %08lx", (unsigned long)INTMSK);
-            /* last 24 events, oldest first, 4 per line */
-            for (k = 0; k < 24; k += 4) {
-                int b0 = usb_dbg_ev_n - 24 + k;
-                _DEBUG_PRINTF("%-7s %-7s %-7s %-7s",
-                    b0 >= 0 ? usb_dbg_ev[b0 % 24] : "",
-                    b0 + 1 >= 0 ? usb_dbg_ev[(b0 + 1) % 24] : "",
-                    b0 + 2 >= 0 ? usb_dbg_ev[(b0 + 2) % 24] : "",
-                    b0 + 3 >= 0 ? usb_dbg_ev[(b0 + 3) % 24] : "");
+            /* the first 64 events after plugging in, 4 per line */
+            for (k = 0; k < usb_dbg_ev_n && k < 64; k += 4) {
+                _DEBUG_PRINTF("%-8s%-8s%-8s%-8s",
+                    usb_dbg_ev[k],
+                    k + 1 < usb_dbg_ev_n ? usb_dbg_ev[k + 1] : "",
+                    k + 2 < usb_dbg_ev_n ? usb_dbg_ev[k + 2] : "",
+                    k + 3 < usb_dbg_ev_n ? usb_dbg_ev[k + 3] : "");
             }
         }
 #endif

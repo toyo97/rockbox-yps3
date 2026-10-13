@@ -103,13 +103,16 @@ unsigned long usb_dbg_last_ssr, usb_dbg_last_ep0sr;
 int usb_dbg_variant;
 
 /* last events, for the debug screen: short tags with a value */
-#define USB_DBG_EVENTS 24
-char usb_dbg_ev[USB_DBG_EVENTS][12];
+/* the first events after the cable is plugged in */
+#define USB_DBG_EVENTS 64
+char usb_dbg_ev[USB_DBG_EVENTS][10];
 int usb_dbg_ev_n;
 static void dbg_ev(const char *tag, unsigned long v)
 {
-    char *e = usb_dbg_ev[usb_dbg_ev_n++ % USB_DBG_EVENTS];
-    snprintf(e, sizeof(usb_dbg_ev[0]), "%s%lx", tag, v);
+    if (usb_dbg_ev_n >= USB_DBG_EVENTS)
+        return;
+    snprintf(usb_dbg_ev[usb_dbg_ev_n++], sizeof(usb_dbg_ev[0]), "%s%lx",
+             tag, v);
 }
 
 struct usb_drv_ep_spec usb_drv_ep_specs[USB_NUM_ENDPOINTS] = {
@@ -767,6 +770,8 @@ void usb_attach(void)
 
 void usb_enable(bool on)
 {
+    if (on)
+        usb_dbg_ev_n = 0;
     dbg_ev(on ? "E1" : "E0", 0);
     if (on)
         usb_core_init();
