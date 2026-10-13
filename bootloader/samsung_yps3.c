@@ -447,7 +447,19 @@ static void usbdump_mode(void)
             }
             disable_irq();
             commit_discard_idcache();
-            ((void (*)(void))exec)();
+            /* The new image copies itself to IRAM with data accesses and
+               then executes it: turn off the caches and the protection
+               unit so it doesn't run stale instructions. */
+            asm volatile(
+                "mrc p15, 0, r0, c1, c0, 0  \n"
+                "bic r0, r0, #0x1000        \n" /* I-cache */
+                "bic r0, r0, #0x5           \n" /* D-cache, protection unit */
+                "mcr p15, 0, r0, c1, c0, 0  \n"
+                "mov r0, #0                 \n"
+                "mcr p15, 0, r0, c7, c5, 0  \n" /* invalidate I-cache */
+                "mcr p15, 0, r0, c7, c6, 0  \n" /* invalidate D-cache */
+                "mov pc, %0                 \n"
+                : : "r"(exec) : "r0", "memory");
         }
         if (TIME_AFTER(current_tick, next_update)) {
             next_update = current_tick + HZ / 2;
