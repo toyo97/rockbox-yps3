@@ -192,6 +192,9 @@ int main(int argc, char **argv)
     ftl_sim_set_range(8, 7786496);
     ftl_write_enabled = true;
     nand_ll_write_enable = true;
+    static uint8_t mbr[9 * 512], fsinfo[512];
+    ftl_read(0, 9, mbr);
+    ftl_read(9, 1, fsinfo);
     srand(1234);
     for (i = 0; i < ops; i++) {
         /* mostly small writes concentrated on a few lbns, sometimes big */
@@ -202,6 +205,13 @@ int main(int argc, char **argv)
         for (k = 0; k < n * 512; k++) data[k] = rand();
         uint32_t rc = ftl_write(FIRST_LBN * 4096 + s, n, data);
         if (rc) { printf("ftl_write rc %u at op %d\n", rc, i); fails++; break; }
+        if (i % 7 == 0) {
+            /* FAT updates its FSInfo sector (partition sector 1) all the
+               time; it shares the first page with the MBR */
+            for (k = 0; k < 512; k++) fsinfo[k] = rand();
+            rc = ftl_write(9, 1, fsinfo);
+            if (rc) { printf("fsinfo write rc %u at op %d\n", rc, i); fails++; break; }
+        }
         memcpy(shadow + s * 512, data, n * 512);
         memset(written + s, 1, n);
         if ((i + 1) % 25 == 0)
@@ -214,6 +224,14 @@ int main(int argc, char **argv)
             ftl_sim_set_range(8, 7786496);
             fails += ftl_sim_check(logf_print);
             fails += verify("after reboot");
+            {
+                static uint8_t chk[16 * 512];
+                if (ftl_read(0, 16, chk) || memcmp(chk + 9 * 512, fsinfo, 512) ||
+                    memcmp(chk, mbr, 9 * 512)) {
+                    printf("page 0 wrong after reboot at op %d\n", i);
+                    fails++;
+                }
+            }
             if (fails) break;
         }
     }

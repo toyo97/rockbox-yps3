@@ -271,8 +271,39 @@ static int nand_read_dma(int bank, unsigned char *buf, unsigned int len)
     This assumes a large page device (2 column + 3 row address cycles).
     It is slow (programmed I/O, 4 bytes per transfer) and only intended
     for probing the flash layout. */
+static int nand_ll_read_raw_once(int bank, unsigned int page,
+                                 unsigned int col, unsigned char *buf,
+                                 unsigned int len);
+
+/* read errors, for the debug and panic screens */
+unsigned long nand_ll_read_errors;
+int nand_ll_read_last_err;
+unsigned int nand_ll_read_last_page;
+
 int nand_ll_read_raw(int bank, unsigned int page, unsigned int col,
                      unsigned char *buf, unsigned int len)
+{
+    int rc = 0;
+    for (int tries = 0; tries < 3; tries++) {
+        rc = nand_ll_read_raw_once(bank, page, col, buf, len);
+        if (rc == 0) {
+            break;
+        }
+        nand_ll_read_errors++;
+        nand_ll_read_last_err = rc;
+        nand_ll_read_last_page = page;
+        /* reset the chip before trying again */
+        nand_chip_select(bank);
+        FMCTRL1 = FMCTRL1_ClearRFIFO | FMCTRL1_ClearWFIFO;
+        nand_send_cmd(0xff);
+        nand_wait_ready();
+    }
+    return rc;
+}
+
+static int nand_ll_read_raw_once(int bank, unsigned int page,
+                                 unsigned int col, unsigned char *buf,
+                                 unsigned int len)
 {
     unsigned int i, word, count;
 

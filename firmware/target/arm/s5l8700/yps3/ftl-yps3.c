@@ -1186,7 +1186,12 @@ static uint32_t ftl_write_nand(uint32_t sector, uint32_t count,
     if (!ftl_ok || !ftl_write_enabled || ftl_write_failed) {
         return 1;
     }
-    if (sector < ftl_write_first || sector + count > ftl_write_end) {
+    /* whole pages: the first page of the partition also holds the MBR,
+       ftl_write() only lets the partition's own sectors be changed and
+       the cache page was read from the flash, so the others are written
+       back unchanged */
+    if (sector < ftl_write_first - ftl_write_first % SECTORS_PER_VPAGE ||
+        sector + count > ftl_write_end) {
         return 2;
     }
     nand_set_active();
@@ -1346,6 +1351,8 @@ int ftl_sim_check(void (*logf_fn)(const char *fmt, ...))
 #define WCACHE_NONE 0xffffffff
 unsigned long ftl_write_refused, ftl_write_refused_sector;
 unsigned long ftl_stat_wcalls, ftl_stat_wlast;
+unsigned long ftl_stat_rerr;
+int ftl_stat_rerr_rc;
 static uint32_t cache_sector = WCACHE_NONE;     /* first sector of the page */
 static bool cache_dirty;
 static uint8_t cache_buf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
@@ -1415,7 +1422,10 @@ uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
                 count -= n;
                 continue;
             }
-            if (ftl_read_nand(page, SECTORS_PER_VPAGE, cache_buf)) {
+            rc = ftl_read_nand(page, SECTORS_PER_VPAGE, cache_buf);
+            if (rc) {
+                ftl_stat_rerr++;
+                ftl_stat_rerr_rc = rc;
                 rc = 3;
                 break;
             }

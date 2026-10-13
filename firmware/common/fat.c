@@ -395,8 +395,8 @@ void dc_writeback_callback(IF_MV(int volume,) sector_t sector, void *buf)
         int rc = storage_write_sectors(IF_MD(fat_bpb->drive,) sector, 1, buf);
         if (rc < 0)
         {
-            panicf("%s() - Could not write sector %llu"
-                   " (error %d)\n", __func__, (uint64_t)sector, rc);
+            panicf("%s() - Could not write sector %lu"
+                   " (error %d)\n", __func__, (unsigned long)sector, rc);
         }
 
         if (--copies == 0)
@@ -1941,7 +1941,18 @@ static int update_short_entry(struct bpb *fat_bpb, struct fat_file *file,
         FAT_ERROR(-1);
 
     if (!ent->name[0] || ent->name[0] == 0xe5)
-        panicf("Updating size on empty dir entry %d\n", file->e.entry);
+    {
+        /* debug: where the entry was looked up and what the sector holds */
+        union raw_dirent *first = ent - file->e.entry % DIR_ENTRIES_PER_SECTOR;
+        char names[DIR_ENTRIES_PER_SECTOR * 3 + 1];
+        for (int i = 0; i < DIR_ENTRIES_PER_SECTOR; i++)
+            snprintf(names + i * 3, 4, "%02x ", first[i].name[0]);
+        panicf("Updating size on empty dir entry %d\n"
+               "dclus %lx fclus %lx sec %lx\n%s\n", file->e.entry,
+               (unsigned long)file->dircluster,
+               (unsigned long)file->firstcluster,
+               (unsigned long)parentstr.lastsector, names);
+    }
 
     /* basic file data */
     raw_dirent_set_fstclus(ent, file->firstcluster);

@@ -142,6 +142,14 @@ void panicf( const char *fmt, ...)
                   ftl_write_refused_sector);
         lcd_putsf(0, y++, "calls %lu last %lu", ftl_stat_wcalls,
                   ftl_stat_wlast);
+        extern unsigned long nand_ll_read_errors, ftl_stat_rerr;
+        extern int nand_ll_read_last_err, ftl_stat_rerr_rc;
+        extern unsigned int nand_ll_read_last_page;
+        lcd_putsf(0, y++, "nand rderr %lu st %d pg %u",
+                  nand_ll_read_errors, nand_ll_read_last_err,
+                  nand_ll_read_last_page);
+        lcd_putsf(0, y++, "ftl rderr %lu rc %d", ftl_stat_rerr,
+                  ftl_stat_rerr_rc);
     }
 #endif
 #endif
