@@ -73,6 +73,8 @@
 #define ECR_STALL           (1 << 1)
 #define ECR_FLUSH           (1 << 6)
 
+#define USB_PHY_REG(o)      (*(REG32_PTR_T)(0x3C400000 + (o)))
+#define EP_FIRST_IN         1
 #define EP_FIFO(n)          (*(REG32_PTR_T)(USB_FC_BASE + 0x60 + 4 * (n)))
 
 #define EP0_MPS             64
@@ -400,10 +402,22 @@ void usb_drv_init(void)
     /* clock of the function controller */
     PWRCON &= ~(1 << 15);
 
+    /* USB PHY power-up and reset, like the original firmware: after the
+       cable was pulled, the PHY the boot ROM set up doesn't answer */
+    PWRCON &= ~(1 << 14);
+    USB_PHY_REG(0x10) = 4;
+    USB_PHY_REG(0x04) = 0;
+    USB_PHY_REG(0x00) = 0x10;
+    USB_PHY_REG(0x08) |= 1;
+    sleep(HZ / 100 + 1);
+    USB_PHY_REG(0x08) &= ~1;
+    sleep(HZ / 100 + 1);
+
     high_speed = (USB_SSR & SSR_HSP) != 0;
     USB_EDR = 0xAA;
     USB_TR = 0;
-    USB_SCR = SCR_DTZIEN_EN | SCR_RRD_EN | SCR_SUS_EN | SCR_RST_EN;
+    /* the original firmware's value; s3c-hsudc uses DTZIEN|RRD|SUS|RST */
+    USB_SCR = 0x4ec3;
     USB_EP0CR = 0;
     USB_IR = 0;
     USB_MPR = EP0_MPS;
