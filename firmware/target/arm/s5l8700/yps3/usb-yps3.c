@@ -134,6 +134,10 @@ static int ep_mps(int ep_num)
 
 /* FIFO access, one packet */
 
+/* Writes one IN packet. The byte count register is written again after
+   the data: written only before, it was sometimes ignored when the previous
+   packet had just gone out, and the packet went out with the wrong length
+   (a 13 byte CSW as 14 bytes, the second packet of a transfer broken). */
 static void fifo_write(int ep_num, const unsigned char *p, int n)
 {
     int i;
@@ -142,6 +146,7 @@ static void fifo_write(int ep_num, const unsigned char *p, int n)
         EP_FIFO(ep_num) = (p[i] << 8) | p[i + 1];
     if (n & 1)
         EP_FIFO(ep_num) = p[n - 1] << 8;
+    USB_BWCR = n;
 }
 
 /* reads one packet of 'bytes' bytes, keeping at most 'room' */

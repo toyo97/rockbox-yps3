@@ -175,11 +175,9 @@ bool dbg_hw_info(void)
         _DEBUG_PRINTF("dbg_hw_info");
         _DEBUG_PRINTF("current_tick: %d", (unsigned int)current_tick);
 #ifdef SAMSUNG_YPS3
-#ifndef HAVE_USBSTACK
         for (i = 0; i < 4; i++) {
             _DEBUG_PRINTF("ADC %d: %4d", i, adc_read(i));
         }
-#endif
         _DEBUG_PRINTF("USB power: %s", (PDAT1 & 2) ? "yes" : "no");
         _DEBUG_PRINTF("P5: %02x (charging %s)", (unsigned)PDAT5,
                       charging_state() ? "yes" : "no");

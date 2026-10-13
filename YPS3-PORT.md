@@ -26,7 +26,8 @@ is ever written to the flash.**
 | Full Rockbox: menus, file browser | works |
 | Playback (WM1800 codec, I2S DMA), headphones | works, stereo |
 | FM radio (tuner answers with DEVICEID 0x1B63) | works, scan finds stations |
-| Writing to the flash, USB mass storage in Rockbox | not done |
+| USB mass storage (read only, write protected) | works, ~1.6-1.9 MB/s |
+| Writing to the flash | not done |
 | Battery calibration, power off on battery, permanent install | not done |
 
 ## The hardware
@@ -235,6 +236,16 @@ table at the top.
 * After the bootloader starts from DFU, the PC still talks to the DFU
   device until a USB bus reset; `yps3_nanddump.py` does it.
 * `USEC_TIMER` (`udelay`) isn't running when started from DFU.
+* USB (`usb-yps3.c`, S3C-HSUDC style controller): the Rockbox USB stack
+  had never run on a big-endian CPU, the setup fields and descriptors need
+  byte swapping. After a bus reset, wait for the reset to end before
+  setting up the controller. Per endpoint the original firmware also sets
+  registers 0x84 and 0x40. The endpoint index register must survive the
+  interrupt handler. The byte count of an IN packet must be written again
+  after the data, or packets go out with the wrong length.
+* Debugging aids: the HW info screen shows the first 64 USB events after
+  plugging in and can stay up in USB mode; a PC-side mass storage probe
+  with pyusb needs a udev rule for the device's ID.
 
 ### NAND / FTL findings
 
