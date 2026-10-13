@@ -102,7 +102,7 @@ unsigned long usb_dbg_last_ssr, usb_dbg_last_ep0sr;
 int usb_dbg_variant;
 
 /* last events, for the debug screen: short tags with a value */
-#define USB_DBG_EVENTS 12
+#define USB_DBG_EVENTS 24
 char usb_dbg_ev[USB_DBG_EVENTS][12];
 int usb_dbg_ev_n;
 static void dbg_ev(const char *tag, unsigned long v)
@@ -293,6 +293,7 @@ static void ep_in_kick(int n)
     int len = MIN(ep->len - ep->cnt, mps);
 
     USB_IR = n;
+    dbg_ev("K", (n << 12) | len);
     fifo_write(n, ep->buf + ep->cnt, len);
     ep->cnt += len;
     if (len < mps)
@@ -306,6 +307,7 @@ static void ep_in_int(int n)
 
     USB_IR = n;
     sr = USB_ESR;
+    dbg_ev("T", (n << 12) | sr);
     if (sr & ESR_STALL)
         USB_ESR = ESR_STALL;
     if (!(sr & ESR_TX_SUCCESS))
@@ -346,6 +348,7 @@ static void ep_out_drain(int n)
         room = ep->len - ep->cnt;
         fifo_read(n, ep->buf + ep->cnt, bytes, room);
         USB_ESR = ESR_RX_SUCCESS;
+        dbg_ev("O", (n << 12) | bytes);
         ep->cnt += MIN(bytes, room);
         if (ep->cnt >= ep->len || bytes < mps)
             ep_complete(n, DIR_OUT, 0);
@@ -503,6 +506,7 @@ void usb_drv_ep_init(const struct usb_drv_ep_alloc_ctx* ctx, int ep)
     (void)ctx;
     if (n == 0)
         return;
+    dbg_ev("N", ep & 0xff);
     USB_IR = n;
     USB_MPR = ep_mps(n);
     USB_ECR = ECR_FLUSH;
@@ -597,6 +601,8 @@ int usb_drv_send_nonblocking(int endpoint, void *ptr, int length)
 int usb_drv_recv_nonblocking(int endpoint, void *ptr, int length)
 {
     int n = EP_NUM(endpoint);
+    if (n)
+        dbg_ev("A", (n << 12) | (length & 0xfff));
     struct ep_state *ep = &ep_states[n][DIR_OUT];
     int oldlevel = disable_irq_save();
 
@@ -623,6 +629,7 @@ int usb_drv_recv_blocking(int endpoint, void *ptr, int length)
 void usb_drv_stall(int endpoint, bool stall, bool in)
 {
     int n = EP_NUM(endpoint);
+    dbg_ev(stall ? "X1" : "X0", n);
     (void)in;
 
     USB_IR = n;

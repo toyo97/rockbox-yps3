@@ -186,7 +186,7 @@ bool dbg_hw_info(void)
             extern unsigned long usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups,
                 usb_dbg_inits, usb_dbg_last_ssr, usb_dbg_last_ep0sr;
             extern int usb_dbg_variant, usb_dbg_ev_n;
-            extern char usb_dbg_ev[12][12];
+            extern char usb_dbg_ev[24][12];
             int k;
             _DEBUG_PRINTF("var %d init %lu irq %lu", usb_dbg_variant,
                           usb_dbg_inits, usb_dbg_irqs);
@@ -196,13 +196,14 @@ bool dbg_hw_info(void)
             _DEBUG_PRINTF("EIR %03lx EIER %03lx", (unsigned long)USB_EIR & 0x1ff,
                           (unsigned long)USB_EIER & 0x1ff);
             _DEBUG_PRINTF("INTMSK %08lx", (unsigned long)INTMSK);
-            /* last 12 events, oldest first, 3 per line */
-            for (k = 0; k < 12; k += 3) {
-                int b0 = usb_dbg_ev_n - 12 + k;
-                _DEBUG_PRINTF("%-10s %-10s %-10s",
-                    b0 >= 0 ? usb_dbg_ev[b0 % 12] : "",
-                    b0 + 1 >= 0 ? usb_dbg_ev[(b0 + 1) % 12] : "",
-                    b0 + 2 >= 0 ? usb_dbg_ev[(b0 + 2) % 12] : "");
+            /* last 24 events, oldest first, 4 per line */
+            for (k = 0; k < 24; k += 4) {
+                int b0 = usb_dbg_ev_n - 24 + k;
+                _DEBUG_PRINTF("%-7s %-7s %-7s %-7s",
+                    b0 >= 0 ? usb_dbg_ev[b0 % 24] : "",
+                    b0 + 1 >= 0 ? usb_dbg_ev[(b0 + 1) % 24] : "",
+                    b0 + 2 >= 0 ? usb_dbg_ev[(b0 + 2) % 24] : "",
+                    b0 + 3 >= 0 ? usb_dbg_ev[(b0 + 3) % 24] : "");
             }
         }
 #endif
