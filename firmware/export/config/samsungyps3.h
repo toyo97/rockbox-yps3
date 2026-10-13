@@ -153,8 +153,6 @@
 #define USB_NUM_ENDPOINTS 6
 #define USB_HAS_BULK        /* usb-yps3.c: control and bulk transfers */
 #define USB_DEVBSS_ATTR __attribute__((aligned(16)))
-/* until the FTL can write, the PC gets a write protected drive */
-#define HAVE_STORAGE_READONLY
 #define USB_VENDOR_ID 0x04E8
 #define USB_PRODUCT_ID 0x5090
 

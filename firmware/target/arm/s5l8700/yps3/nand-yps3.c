@@ -333,6 +333,7 @@ int nand_ll_read_raw(int bank, unsigned int page, unsigned int col,
 }
 
 static long nand_last_activity_value = -1;
+void ftl_idle(void);
 
 void nand_set_active(void)
 {
@@ -356,6 +357,10 @@ int nand_event(long id, intptr_t data)
     if (LIKELY(id == Q_STORAGE_TICK)) {
         if (TIME_BEFORE(current_tick, nand_last_activity_value + HZ / 5)) {
             STG_EVENT_ASSERT_ACTIVE(STORAGE_NAND);
+        }
+        else {
+            /* write the cached page once the NAND has been idle */
+            ftl_idle();
         }
     }
     else if (id == Q_STORAGE_SLEEPNOW) {
@@ -457,22 +462,6 @@ static bool nand_write_allowed(unsigned int page)
     return nand_ll_write_enable && block >= NAND_FIRST_WRITABLE_BLOCK;
 }
 
-/* writes 1 to 4 bytes, first byte in the least significant position */
-static int nand_write_word(unsigned int count, unsigned int word)
-{
-#ifdef ROCKBOX_BIG_ENDIAN
-    word = swap32(word);    /* first byte in the most significant lane */
-#endif
-    FMDNUM = count - 1;
-    FMFIFO = word;
-    FMCTRL1 = FMCTRL1_DoWriteData;
-    if (nand_wait_status(FMSTAT_TransDone)) {
-        FMCTRL1 = FMCTRL1_ClearWFIFO;
-        return -1;
-    }
-    return 0;
-}
-
 /*  DMA write of the data phase, like the original firmware's FIL: channel 1
     with DMACON1 = 0x60880000 (memory to FMC), FMCTRL1 = DoWriteData |
     WriteREQSEL. Programmed I/O through FMFIFO doesn't reach the chip. */
@@ -512,22 +501,6 @@ static int nand_write_dma(int bank, const unsigned char *buf, unsigned int len)
         return -1;
     }
     nand_chip_select(bank);
-    return 0;
-}
-
-static int nand_write_bytes(const unsigned char *buf, unsigned int len)
-{
-    unsigned int i, count, word;
-    for (i = 0; i < len; i += count) {
-        count = (len - i) < 4 ? (len - i) : 4;
-        word = buf[i];
-        if (count > 1) word |= buf[i + 1] << 8;
-        if (count > 2) word |= buf[i + 2] << 16;
-        if (count > 3) word |= (unsigned int)buf[i + 3] << 24;
-        if (nand_write_word(count, word)) {
-            return -1;
-        }
-    }
     return 0;
 }
 

@@ -26,6 +26,7 @@
 static uint8_t *pages[NPAGES];
 static int lastprog[DIES * BLOCKS];
 bool nand_ll_use_dma, nand_ll_write_enable;
+int nand_ll_last_status;
 static unsigned long n_prog, n_erase, n_violations;
 
 static void violation(const char *fmt, ...)
@@ -203,8 +204,11 @@ int main(int argc, char **argv)
         if (rc) { printf("ftl_write rc %u at op %d\n", rc, i); fails++; break; }
         memcpy(shadow + s * 512, data, n * 512);
         memset(written + s, 1, n);
+        if ((i + 1) % 25 == 0)
+            fails += verify("with cache");
         if ((i + 1) % 50 == 0) {
-            /* reboot: rebuild everything from the NAND */
+            /* reboot: write the cache, rebuild everything from the NAND */
+            if (ftl_sync()) { printf("ftl_sync failed\n"); fails++; break; }
             if (ftl_init()) { printf("ftl_init failed after %d ops\n", i + 1); fails++; break; }
             ftl_write_enabled = true;
             ftl_sim_set_range(8, 7786496);
@@ -213,6 +217,7 @@ int main(int argc, char **argv)
             if (fails) break;
         }
     }
+    ftl_sync();
     ftl_write_log(logf_print);
     fails += verify("final");
     printf("NAND: %lu programs, %lu erases, %lu violations\n", n_prog, n_erase, n_violations);

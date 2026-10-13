@@ -81,14 +81,6 @@ void nand_get_info(IF_MD(int drive,) struct storage_info *info)
     (*info).revision = "1.0";
 }
 
-#ifdef HAVE_STORAGE_READONLY
-bool nand_readonly(IF_MD_NONVOID(int drive))
-{
-    IF_MD((void)drive);
-    return true;    /* writes only go to a RAM overlay so far */
-}
-#endif
-
 long nand_last_disk_activity(void)
 {
     return nand_last_activity();

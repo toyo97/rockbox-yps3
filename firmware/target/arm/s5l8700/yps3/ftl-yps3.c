@@ -65,6 +65,16 @@
 #include "ftl-target.h"
 #include "sdram-target.h"
 
+#ifndef BOOTLOADER
+#include "kernel.h"
+static struct mutex ftl_mtx;
+#define FTL_LOCK()   mutex_lock(&ftl_mtx)
+#define FTL_UNLOCK() mutex_unlock(&ftl_mtx)
+#else
+#define FTL_LOCK()
+#define FTL_UNLOCK()
+#endif
+
 #define DIES                2
 #define BLOCKS_PER_DIE      4096
 #define PAGES_PER_BLOCK     128
@@ -474,6 +484,9 @@ uint32_t ftl_init(void)
         return 2;
     }
     ftl_ok = true;
+#ifndef BOOTLOADER
+    mutex_init(&ftl_mtx);
+#endif
     ftl_write_setup();
 
     /* DMA and ECC are only used if they work as expected on this unit */
@@ -1223,6 +1236,11 @@ static void ftl_write_setup(void)
     }
     ftl_write_first = start;
     ftl_write_end = start + size;
+#ifndef BOOTLOADER
+    /* the main firmware writes (the music partition only) */
+    ftl_write_enabled = true;
+    nand_ll_write_enable = true;
+#endif
 }
 
 /* development: merge the log of 'lbn' (e.g. one with pages that were
@@ -1318,84 +1336,105 @@ int ftl_sim_check(void (*logf_fn)(const char *fmt, ...))
 }
 #endif
 
-#ifdef BOOTLOADER
-uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
-{
-    return ftl_read_nand(sector, count, buffer);
-}
+/*  One virtual page of write cache: Rockbox writes single sectors (FAT,
+    directory entries), each would cost a whole 8 KiB page in the log. The
+    page is written when another page is written, on ftl_sync() and when
+    the storage goes idle (nand_event). */
+#define WCACHE_NONE 0xffffffff
+static uint32_t cache_sector = WCACHE_NONE;     /* first sector of the page */
+static bool cache_dirty;
+static uint8_t cache_buf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
 
-uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
+static uint32_t cache_flush(void)
 {
-    return ftl_write_nand(sector, count, buffer);
-}
-#else
-/*  Until the FTL can write, writes go to a RAM overlay and are lost at power
-    off: nothing is ever written to the flash. This is enough for settings,
-    the playlist control file and other small files during a session. */
-#define OVL_SLOTS   2048                /* 1 MiB of sectors */
-#define OVL_HASH    (OVL_SLOTS * 2)     /* power of two */
-static uint32_t ovl_key[OVL_HASH];      /* sector + 1, 0 = empty */
-static uint16_t ovl_slot[OVL_HASH];
-static uint8_t ovl_data[OVL_SLOTS][SECTOR_SIZE] __attribute__((aligned(16)));
-static unsigned int ovl_used;
-
-static int ovl_find(uint32_t sector, bool create)
-{
-    unsigned int h = (sector * 2654435761u) & (OVL_HASH - 1);
-
-    while (ovl_key[h]) {
-        if (ovl_key[h] == sector + 1) {
-            return ovl_slot[h];
-        }
-        h = (h + 1) & (OVL_HASH - 1);
+    uint32_t rc = 0;
+    if (cache_sector != WCACHE_NONE && cache_dirty) {
+        rc = ftl_write_nand(cache_sector, SECTORS_PER_VPAGE, cache_buf);
     }
-    if (!create || ovl_used >= OVL_SLOTS) {
-        return -1;
+    cache_dirty = false;
+    if (rc) {
+        cache_sector = WCACHE_NONE;
     }
-    ovl_key[h] = sector + 1;
-    ovl_slot[h] = ovl_used;
-    return ovl_used++;
+    return rc;
 }
 
 uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
 {
-    uint8_t *dst = buffer;
-    uint32_t rc, i;
-
+    uint32_t rc;
+    FTL_LOCK();
     rc = ftl_read_nand(sector, count, buffer);
-    if (rc || !ovl_used) {
-        return rc;
+    if (!rc && cache_sector != WCACHE_NONE && cache_dirty &&
+        sector < cache_sector + SECTORS_PER_VPAGE &&
+        sector + count > cache_sector) {
+        uint32_t first = MAX(sector, cache_sector);
+        uint32_t end = MIN(sector + count, cache_sector + SECTORS_PER_VPAGE);
+        memcpy((uint8_t *)buffer + (first - sector) * SECTOR_SIZE,
+               cache_buf + (first - cache_sector) * SECTOR_SIZE,
+               (end - first) * SECTOR_SIZE);
     }
-    for (i = 0; i < count; i++) {
-        int slot = ovl_find(sector + i, false);
-        if (slot >= 0) {
-            memcpy(dst + i * SECTOR_SIZE, ovl_data[slot], SECTOR_SIZE);
-        }
-    }
-    return 0;
+    FTL_UNLOCK();
+    return rc;
 }
 
 uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
 {
     const uint8_t *src = buffer;
+    uint32_t rc = 0;
 
-    if (!ftl_ok || sector + count > ftl_sector_count()) {
+    FTL_LOCK();
+    if (!ftl_ok || !ftl_write_enabled || ftl_write_failed ||
+        sector < ftl_write_first || sector + count > ftl_write_end) {
+        FTL_UNLOCK();
         return 1;
     }
-    while (count--) {
-        int slot = ovl_find(sector, true);
-        if (slot < 0) {
-            return 2;   /* overlay full */
+    while (count && !rc) {
+        uint32_t page = sector - sector % SECTORS_PER_VPAGE;
+        uint32_t sec = sector - page;
+        uint32_t n = MIN(count, SECTORS_PER_VPAGE - sec);
+
+        if (cache_sector != page) {
+            rc = cache_flush();
+            if (rc) {
+                break;
+            }
+            if (n == SECTORS_PER_VPAGE) {
+                /* a whole page: straight to the flash */
+                cache_sector = WCACHE_NONE;
+                rc = ftl_write_nand(page, SECTORS_PER_VPAGE, src);
+                src += n * SECTOR_SIZE;
+                sector += n;
+                count -= n;
+                continue;
+            }
+            if (ftl_read_nand(page, SECTORS_PER_VPAGE, cache_buf)) {
+                rc = 3;
+                break;
+            }
+            cache_sector = page;
         }
-        memcpy(ovl_data[slot], src, SECTOR_SIZE);
-        src += SECTOR_SIZE;
-        sector++;
+        memcpy(cache_buf + sec * SECTOR_SIZE, src, n * SECTOR_SIZE);
+        cache_dirty = true;
+        src += n * SECTOR_SIZE;
+        sector += n;
+        count -= n;
     }
-    return 0;
+    FTL_UNLOCK();
+    return rc;
 }
-#endif
 
 uint32_t ftl_sync(void)
 {
-    return 0;
+    uint32_t rc;
+    FTL_LOCK();
+    rc = cache_flush();
+    FTL_UNLOCK();
+    return rc;
+}
+
+/* called by the storage thread when the NAND has been idle for a while */
+void ftl_idle(void)
+{
+    if (cache_dirty) {
+        ftl_sync();
+    }
 }
