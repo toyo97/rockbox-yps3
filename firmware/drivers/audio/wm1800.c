@@ -103,6 +103,10 @@ void audiohw_preinit(void)
 void audiohw_postinit(void)
 {
     audiohw_mute(false);
+#ifdef SAMSUNG_YPS3
+    /* the headphone amplifier after the codec has a separate mute */
+    audio_amp_enable(true);
+#endif
 }
 
 void audiohw_set_volume(int vol_l, int vol_r)
@@ -126,6 +130,9 @@ void audiohw_set_bypass(bool enable)
 
 void audiohw_close(void)
 {
+#ifdef SAMSUNG_YPS3
+    audio_amp_enable(false);
+#endif
     audiohw_mute(true);
     wm1800_write(WM1800_PWR3, 0);
     wm1800_write(WM1800_PWR2, 0);

@@ -70,4 +70,9 @@ AUDIOHW_SETTING(VOLUME,     "dB", 0, 1, -74,  6, -25)
 /* route the line input (the FM tuner) to the headphones */
 void audiohw_set_bypass(bool enable);
 
+#ifdef SAMSUNG_YPS3
+/* headphone amplifier mute, in the target code */
+void audio_amp_enable(bool enable);
+#endif
+
 #endif /* _WM1800_H */
