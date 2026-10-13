@@ -25,9 +25,16 @@
 #include "cpucache-arm.h"
 
 #define CPUFREQ_SLEEP      32768
+#ifdef SAMSUNG_YPS3
+/* measured: FCLK = PLL0 = ~196 MHz, HCLK = PLL0 / 2 */
+#define CPUFREQ_MAX     196000000
+#define CPUFREQ_DEFAULT (CPUFREQ_MAX/2)
+#define CPUFREQ_NORMAL  (CPUFREQ_MAX/2)
+#else
 #define CPUFREQ_MAX     (1843200 * 4 * 26 / 1) /* 191692800 Hz */
 #define CPUFREQ_DEFAULT (CPUFREQ_MAX/4)        /*  47923200 Hz */
 #define CPUFREQ_NORMAL  (CPUFREQ_MAX/4)
+#endif
 
 #define STORAGE_WANTS_ALIGN
 

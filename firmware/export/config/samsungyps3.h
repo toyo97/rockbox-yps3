@@ -143,7 +143,7 @@
 #define FLASH_SIZE 0x400000
 
 /* Define this to the CPU frequency */
-#define CPU_FREQ      200000000
+#define CPU_FREQ      196000000
 
 /* Define this if you have ATA power-off control */
 //#define HAVE_ATA_POWER_OFF
@@ -154,8 +154,9 @@
 #define USB_PRODUCT_ID 0x5090
 
 /* Define this if you have adjustable CPU frequency */
-/* TODO: needs SDRAM timings for the unboosted clock */
-//#define HAVE_ADJUSTABLE_CPU_FREQ
+#ifndef BOOTLOADER
+#define HAVE_ADJUSTABLE_CPU_FREQ
+#endif
 
 #define BOOTFILE_EXT "yps3"
 #define BOOTFILE "rockbox." BOOTFILE_EXT

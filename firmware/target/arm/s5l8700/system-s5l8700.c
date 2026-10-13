@@ -212,7 +212,33 @@ void system_exception_wait(void)
     while(1);
 }
 
-#ifdef HAVE_ADJUSTABLE_CPU_FREQ
+#if defined(HAVE_ADJUSTABLE_CPU_FREQ) && defined(SAMSUNG_YPS3)
+
+/*  Only the CPU core clock changes: asynchronous mode runs it from FCLK
+    (PLL0), fastbus mode from HCLK (PLL0 / 2). HCLK, PCLK and the SDRAM
+    timings stay the same. */
+void set_cpu_frequency(long frequency)
+{
+    if (cpu_frequency == frequency)
+        return;
+
+    if (frequency == CPUFREQ_MAX)
+        asm volatile(
+            "mrc     p15, 0, r0, c1, c0    \n\t"
+            "orr     r0, r0, #0xc0000000   \n\t"
+            "mcr     p15, 0, r0, c1, c0    \n\t"
+            ::: "r0");
+    else
+        asm volatile(
+            "mrc     p15, 0, r0, c1, c0    \n\t"
+            "bic     r0, r0, #0xc0000000   \n\t"
+            "mcr     p15, 0, r0, c1, c0    \n\t"
+            ::: "r0");
+
+    cpu_frequency = frequency;
+}
+
+#elif defined(HAVE_ADJUSTABLE_CPU_FREQ)
 
 void set_cpu_frequency(long frequency)
 {

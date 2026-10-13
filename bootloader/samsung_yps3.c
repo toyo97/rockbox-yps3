@@ -640,6 +640,9 @@ static void clock_probe(void)
     }
     cur_loop = loop_iram;
     clock_measure("loop in IRAM");
+    cp15_clocking(0);
+    clock_measure("fastbus (CPU = HCLK)");
+    cp15_clocking(3);
     {
         unsigned long c2 = CLKCON2;
         int oldlevel = disable_irq_save();

@@ -57,7 +57,10 @@ void power_init(void)
 
     /* configure P5.2 / P5.3 / P5.6 as output, P5.4 as input */
     PCON5 = (PCON5 & ~0x0F0FFF00) | 0x01001100;
-    PDAT5 &= ~((1 << 2) | (1 << 3) | (1 << 6));
+    PDAT5 &= ~((1 << 2) | (1 << 3));
+    /* enable the charger: it only charges with USB power present and
+       ends the charge by itself */
+    PDAT5 |= (1 << 6);
 }
 
 #if CONFIG_CHARGING
