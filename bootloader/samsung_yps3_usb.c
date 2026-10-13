@@ -61,6 +61,12 @@
 
 /* vendor OUT requests (bmRequestType 0x40), for development */
 #define REQ_WRITE_MEM       0x54    /* data -> wValue | wIndex << 16 */
+#define REQ_FTL_READ        0x58    /* FTL sectors (ECC corrected) ->
+                                       wValue | wIndex << 16 = sector */
+#define REQ_FTL_WRITE       0x59    /* data -> FTL sectors (music partition
+                                       only, if enabled) */
+#define REQ_FTL_ENABLE      0x5A    /* wValue 0x5752 enables writing */
+#define REQ_FTL_STATUS      0x5B    /* -> write statistics text */
 #define REQ_EXEC            0x55    /* jump to wValue | wIndex << 16, after
                                        the status stage */
 
@@ -68,6 +74,30 @@
 
 /* in IRAM: the USB reader must work even if the SDRAM doesn't */
 static unsigned char buf[NAND_PAGE_TOTAL] __attribute__((aligned(4)));
+
+/* FTL access for development */
+extern bool ftl_write_enabled;
+uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer);
+uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer);
+void ftl_write_log(void (*logf_fn)(const char *fmt, ...));
+static int ftl_last_write_rc;
+static char ftl_status[256];
+static int ftl_status_len;
+static void ftl_status_logf(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    ftl_status_len += vsnprintf(ftl_status + ftl_status_len,
+                                sizeof(ftl_status) - ftl_status_len, fmt, ap);
+    va_end(ap);
+    if (ftl_status_len >= (int)sizeof(ftl_status))
+        ftl_status_len = sizeof(ftl_status) - 1;
+    ftl_status_len += snprintf(ftl_status + ftl_status_len,
+                               sizeof(ftl_status) - ftl_status_len,
+                               " lastrc %d", ftl_last_write_rc);
+    if (ftl_status_len >= (int)sizeof(ftl_status))
+        ftl_status_len = sizeof(ftl_status) - 1;
+}
 static const unsigned int *nand_ids;
 
 /* -1 = unknown, 0 = first byte in the low half of a FIFO halfword,
@@ -332,6 +362,22 @@ static void handle_setup(void)
             }
             ep0_send(buf, 16, length);
             return;
+        case REQ_FTL_READ: {
+            unsigned int sector = value | (index << 16);
+            unsigned int n = (length + 511) / 512;
+            if (n == 0 || n * 512 > sizeof(buf) || ftl_read(sector, n, buf)) {
+                ep0_stall();
+                return;
+            }
+            ep0_send(buf, n * 512, length);
+            return;
+        }
+        case REQ_FTL_STATUS: {
+            ftl_status_len = 0;
+            ftl_write_log(ftl_status_logf);
+            ep0_send((const unsigned char *)ftl_status, ftl_status_len, length);
+            return;
+        }
         case REQ_READ_MEM:
             ep0_send((const unsigned char *)(value | (index << 16)),
                      length, length);
@@ -349,6 +395,18 @@ static void handle_setup(void)
 
     if (type == 0x40) {
         switch (req) {
+        case REQ_FTL_WRITE: {
+            unsigned int sector = value | (index << 16);
+            unsigned int n = length / 512;
+            ep0_receive(buf, length);
+            ftl_last_write_rc = (n && n * 512 == length && n * 512 <= sizeof(buf))
+                ? (int)ftl_write(sector, n, buf) : -1;
+            return;
+        }
+        case REQ_FTL_ENABLE:
+            ftl_write_enabled = (value == 0x5752);
+            nand_ll_write_enable = ftl_write_enabled;
+            return;
         case REQ_WRITE_MEM:
             ep0_receive((unsigned char *)(value | (index << 16)), length);
             return;

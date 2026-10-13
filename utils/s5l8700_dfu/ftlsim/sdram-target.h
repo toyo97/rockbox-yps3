@@ -1,0 +1,1 @@
+#define SDRAM_BSS_ATTR

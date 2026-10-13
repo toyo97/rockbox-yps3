@@ -108,16 +108,28 @@ static uint16_t ftl_map[FTL_MAP_CHUNKS][FTL_MAP_ENTRIES] SDRAM_BSS_ATTR;
 static uint32_t ftl_lblocks;
 
 #define LOG_NONE 0xffff  /* page 255 is a valid log page */
+#define LOG_UNUSED 0xffff
 
+/* the 12 log slots, in the order of the context's tables */
 struct ftl_log {
-    uint16_t vblock;
+    uint16_t vblock;                        /* LOG_UNUSED: free slot */
     uint16_t lbn;
+    uint32_t ec;                            /* erase count of vblock */
+    uint32_t age;                           /* for the LRU merge victim */
+    uint16_t nfree;                         /* next page offset to write */
+    uint16_t nvalid;                        /* distinct logical pages */
+    bool dirty;                             /* pages after the last commit */
     uint16_t page[VPAGES_PER_VBLOCK];       /* log page of each page,
                                                LOG_NONE if not in the log */
     uint16_t valid[VPAGES_PER_VBLOCK];      /* sectors held by the log */
 };
 static struct ftl_log ftl_logs[FTL_LOGS] SDRAM_BSS_ATTR;
 static int ftl_nlogs;
+
+/* newest context header and all 8 map chunks (bytes 0x200-0x7ff of their
+   stream pages: map, reclaim bitmap, erase count table) */
+static uint8_t ftl_hdr[0x200];
+static uint8_t ftl_chunk[FTL_MAP_CHUNKS][0x600] SDRAM_BSS_ATTR;
 
 static bool ftl_ok = false;
 
@@ -275,14 +287,59 @@ static int ftl_last_meta_page(unsigned int vblock, uint32_t *usn)
     return found;
 }
 
+/*  Rebuilds a log's page table like the original firmware's _MakeLogMap:
+    only pages up to the last one carrying a 0x00 status (the end of a
+    write transaction) count; later pages are an interrupted write. */
+static bool spare_committed(const uint8_t *sp)
+{
+    int s;
+    if (be32(&sp[12]) >= VPAGES_PER_VBLOCK) {
+        return false;
+    }
+    for (s = 0; s < SECTORS_PER_VPAGE; s++) {
+        if (sp[16 + s] == 0x00) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static int ftl_open_log(struct ftl_log *log)
 {
-    unsigned int p, s;
+    int p, last = -1;
+    unsigned int s;
 
     memset(log->page, 0xff, sizeof(log->page));     /* LOG_NONE */
     memset(log->valid, 0, sizeof(log->valid));
+    log->nvalid = 0;
+    log->dirty = false;
+    log->age = 0;
 
-    for (p = 0; p < VPAGES_PER_VBLOCK; p++) {
+    for (p = VPAGES_PER_VBLOCK - 1; p >= 0; p--) {
+        if (vfl_read_spare(log->vblock * VPAGES_PER_VBLOCK + p, spare)) {
+            return -1;
+        }
+        if (spare_empty(spare)) {
+            continue;
+        }
+        if (spare_committed(spare)) {
+            last = p;
+            break;
+        }
+        log->dirty = true;      /* written after the last commit */
+    }
+    log->nfree = last + 1;
+    /* the original firmware also wants the 3 offsets after it erased */
+    for (p = last + 1; p < last + 4 && p < VPAGES_PER_VBLOCK; p++) {
+        if (vfl_read_spare(log->vblock * VPAGES_PER_VBLOCK + p, spare)) {
+            return -1;
+        }
+        if (!spare_empty(spare)) {
+            log->dirty = true;
+        }
+    }
+
+    for (p = 0; p <= last; p++) {
         if (vfl_read_spare(log->vblock * VPAGES_PER_VBLOCK + p, spare)) {
             return -1;
         }
@@ -292,6 +349,9 @@ static int ftl_open_log(struct ftl_log *log)
         uint32_t lp = be32(&spare[12]);
         if (lp >= VPAGES_PER_VBLOCK) {
             continue;
+        }
+        if (log->page[lp] == LOG_NONE) {
+            log->nvalid++;
         }
         log->page[lp] = p;
         log->valid[lp] = 0;
@@ -326,10 +386,11 @@ static int ftl_open(void)
         return -10;
     }
 
-    /* the context fields we use are all in the first 0x200 bytes */
+    /* the context header is the first 0x200 bytes */
     if (vfl_read(best_block * VPAGES_PER_VBLOCK + best_page, 0, buf, 0x200)) {
         return -11;
     }
+    memcpy(ftl_hdr, buf, sizeof(ftl_hdr));
 
     uint16_t map_block[FTL_MAP_CHUNKS], map_page[FTL_MAP_CHUNKS];
     for (i = 0; i < FTL_MAP_CHUNKS; i++) {
@@ -339,14 +400,12 @@ static int ftl_open(void)
 
     ftl_nlogs = 0;
     for (i = 0; i < FTL_LOGS; i++) {
-        uint16_t vb = be16(&buf[0x70 + 2 * i]);
-        uint16_t lbn = be16(&buf[0x88 + 2 * i]);
-        if (vb == 0xffff) {
-            continue;
+        ftl_logs[i].vblock = be16(&buf[0x70 + 2 * i]);
+        ftl_logs[i].lbn = be16(&buf[0x88 + 2 * i]);
+        ftl_logs[i].ec = be32(&buf[0xa0 + 4 * i]);
+        if (ftl_logs[i].vblock != LOG_UNUSED) {
+            ftl_nlogs++;
         }
-        ftl_logs[ftl_nlogs].vblock = vb;
-        ftl_logs[ftl_nlogs].lbn = lbn;
-        ftl_nlogs++;
     }
 
     for (i = 0; i < FTL_MAP_CHUNKS; i++) {
@@ -354,14 +413,15 @@ static int ftl_open(void)
                      buf, FTL_MAP_ENTRIES * 2)) {
             return -12;
         }
+        memcpy(ftl_chunk[i], buf, 0x600);
         unsigned int j;
         for (j = 0; j < FTL_MAP_ENTRIES; j++) {
             ftl_map[i][j] = be16(&buf[2 * j]);
         }
     }
 
-    for (i = 0; i < (unsigned int)ftl_nlogs; i++) {
-        if (ftl_open_log(&ftl_logs[i])) {
+    for (i = 0; i < FTL_LOGS; i++) {
+        if (ftl_logs[i].vblock != LOG_UNUSED && ftl_open_log(&ftl_logs[i])) {
             return -13;
         }
     }
@@ -381,6 +441,7 @@ void ftl_ecc_encode_selftest(void (*logf_fn)(const char *fmt, ...), int pages);
 bool ftl_dma_selftest(void (*logf_fn)(const char *fmt, ...));
 
 static int ftl_init_rc;
+static void ftl_write_setup(void);
 static char selftest_log[4][80];
 static int selftest_n;
 
@@ -413,6 +474,7 @@ uint32_t ftl_init(void)
         return 2;
     }
     ftl_ok = true;
+    ftl_write_setup();
 
     /* DMA and ECC are only used if they work as expected on this unit */
     selftest_n = 0;
@@ -587,11 +649,11 @@ uint32_t ftl_sector_count(void)
     return ftl_lblocks * SECTORS_PER_LBLOCK;
 }
 
-static const struct ftl_log *ftl_find_log(unsigned int lbn)
+static struct ftl_log *ftl_find_log(unsigned int lbn)
 {
     int i;
-    for (i = 0; i < ftl_nlogs; i++) {
-        if (ftl_logs[i].lbn == lbn) {
+    for (i = 0; i < FTL_LOGS; i++) {
+        if (ftl_logs[i].vblock != LOG_UNUSED && ftl_logs[i].lbn == lbn) {
             return &ftl_logs[i];
         }
     }
@@ -655,6 +717,584 @@ static uint32_t ftl_read_nand(uint32_t sector, uint32_t count, void *buffer)
     return 0;
 }
 
+/*  Writing, compatible with the original firmware (see YPS3-PORT.md and
+    the write specification derived from its Whimory 2.2 code):
+    * every write is a full 16 sector virtual page appended to the log
+      block of its logical block, spare: logical page at 12-15, sector
+      statuses 0x0f with 0x00 on sector 15 (each page ends a transaction),
+      log page offsets keep the parity (die) of the logical page;
+    * a new log takes a block from the free ring (lowest erase count); with
+      all 12 logs in use, or a full log, a "simple merge" copies the newest
+      pages into a fresh block that becomes the data block, and the old
+      data and log blocks go back to the free ring;
+    * whenever the logs or the map change, a new context page (header +
+      the affected map chunk) is written to that chunk's meta stream.
+    No wear levelling (the original firmware does it when it runs). Only
+    the FAT32 music partition can be written. Any NAND error stops
+    writing until the next start. */
+
+bool ftl_write_enabled = false;
+static bool ftl_write_failed;
+static uint32_t ftl_write_first, ftl_write_end;   /* writable sectors */
+static uint32_t ftl_age_counter;
+unsigned long ftl_stat_pages, ftl_stat_merges, ftl_stat_cxt, ftl_stat_erases;
+
+static uint8_t wbuf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+static uint8_t cbuf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+static uint8_t pbuf[PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+static uint8_t eccblock[SECTOR_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+static uint8_t wspare[128] __attribute__((aligned(16)));
+
+/* the ECC the original firmware stores for a sector it doesn't write */
+static const uint8_t ecc_blank[9] =
+    { 0x1b, 0xb1, 0x4e, 0x81, 0xff, 0xd5, 0x38, 0x4e, 0x0a };
+
+static inline void put16(uint8_t *p, uint16_t v)
+{
+    p[0] = v >> 8; p[1] = v;
+}
+
+static inline void put32(uint8_t *p, uint32_t v)
+{
+    p[0] = v >> 24; p[1] = v >> 16; p[2] = v >> 8; p[3] = v;
+}
+
+/* header fields */
+#define H_USN           0x000
+#define H_SPARE_VB      0x004
+#define H_SPARE_EC      0x008
+#define H_CACHED        0x00c
+#define H_NFREE         0x00e
+#define H_HEAD          0x010
+#define H_WL_STATIC     0x012
+#define H_WL_META       0x014
+#define H_RING          0x016
+#define H_RING_EC       0x034
+#define H_LOG_VB        0x070
+#define H_LOG_LBN       0x088
+#define H_LOG_EC        0x0a0
+#define H_STREAM_VB     0x0d0
+#define H_STREAM_PG     0x154
+#define RING_SIZE       15
+/* chunk fields (offsets in ftl_chunk, i.e. page offset - 0x200) */
+#define C_MAP           0x000
+#define C_STREAM_EC     0x204
+#define C_ECTBL         0x300
+
+static int wfail(int rc)
+{
+    ftl_write_failed = true;
+    return rc;
+}
+
+/* programs one plane page; 'data' 4096 bytes (or NULL), 'mask' sectors */
+static int vfl_program_plane(int die, unsigned int pblock, unsigned int page,
+                             const uint8_t *data, unsigned int mask,
+                             const uint8_t *meta)
+{
+    unsigned int s;
+    uint32_t row = (die * BLOCKS_PER_DIE + pblock) * PAGES_PER_BLOCK + page;
+
+    memset(wspare, 0xff, sizeof(wspare));
+    wspare[1] = 0x00;
+    memcpy(&wspare[12], meta, 20);
+    for (s = 0; s < 8; s++) {
+        if (data && (mask & (1 << s))) {
+            memcpy(&pbuf[s * SECTOR_SIZE], data + s * SECTOR_SIZE, SECTOR_SIZE);
+            if (nand_ll_ecc_encode(&pbuf[s * SECTOR_SIZE],
+                                   &wspare[40 + 9 * s], 0)) {
+                return -10;
+            }
+        }
+        else {
+            memset(&pbuf[s * SECTOR_SIZE], 0xff, SECTOR_SIZE);
+            memcpy(&wspare[40 + 9 * s], ecc_blank, 9);
+        }
+    }
+    memset(eccblock, 0xff, sizeof(eccblock));
+    memcpy(eccblock, meta, 20);
+    if (nand_ll_ecc_encode(eccblock, &wspare[2], 0)) {
+        return -10;
+    }
+    return nand_ll_program_page(0, row, pbuf, wspare, sizeof(wspare));
+}
+
+/* programs a virtual page: data is 8 KiB, mask has 16 sector bits; the
+   same 20 metadata bytes go to both planes like the original firmware */
+static int vfl_program(uint32_t vpn, const uint8_t *data, unsigned int mask,
+                       const uint8_t *meta)
+{
+    unsigned int vblock = vpn / VPAGES_PER_VBLOCK;
+    unsigned int rest = vpn % VPAGES_PER_VBLOCK;
+    int die = rest & 1, plane, rc;
+
+    for (plane = 0; plane < 2; plane++) {
+        rc = vfl_program_plane(die, vfl_phys_block(die, vblock * 2 + plane),
+                               rest >> 1, data ? data + plane * PAGE_SIZE : NULL,
+                               (mask >> (8 * plane)) & 0xff, meta);
+        if (rc) {
+            return rc;
+        }
+    }
+    return 0;
+}
+
+/* erases a virtual block: both planes in both dies */
+static int vfl_erase(unsigned int vblock)
+{
+    int die, plane, rc;
+
+    for (die = 0; die < DIES; die++) {
+        for (plane = 0; plane < 2; plane++) {
+            unsigned int pb = vfl_phys_block(die, vblock * 2 + plane);
+            rc = nand_ll_erase_block(0, (die * BLOCKS_PER_DIE + pb) *
+                                        PAGES_PER_BLOCK);
+            if (rc) {
+                return rc;
+            }
+        }
+    }
+    ftl_stat_erases++;
+    return 0;
+}
+
+/* reads a whole virtual page (ECC corrected when enabled) and its plane 0
+   metadata. Returns 1 if the page is blank. */
+static int vfl_read_vpage(uint32_t vpn, uint8_t *data, uint8_t *meta)
+{
+    if (vfl_read_spare(vpn, spare)) {
+        return -1;
+    }
+    if (spare_empty(spare)) {
+        return 1;
+    }
+    memcpy(meta, &spare[12], 20);
+    if (vfl_read(vpn, 0, data, PAGE_SIZE) ||
+        vfl_read(vpn, PAGE_SIZE, data + PAGE_SIZE, PAGE_SIZE)) {
+        return -1;
+    }
+    return 0;
+}
+
+static uint16_t map_get(unsigned int lbn)
+{
+    return ftl_map[lbn % FTL_MAP_CHUNKS][lbn / FTL_MAP_CHUNKS];
+}
+
+static void map_set(unsigned int lbn, uint16_t vb, uint32_t ec)
+{
+    uint8_t *c = ftl_chunk[lbn % FTL_MAP_CHUNKS];
+    unsigned int i = lbn / FTL_MAP_CHUNKS;
+    ftl_map[lbn % FTL_MAP_CHUNKS][i] = vb;
+    put16(&c[C_MAP + 2 * i], vb);
+    c[C_ECTBL + 3 * i] = ec >> 16;
+    c[C_ECTBL + 3 * i + 1] = ec >> 8;
+    c[C_ECTBL + 3 * i + 2] = ec;
+}
+
+static uint32_t ec_get(unsigned int lbn)
+{
+    const uint8_t *c = ftl_chunk[lbn % FTL_MAP_CHUNKS];
+    unsigned int i = lbn / FTL_MAP_CHUNKS;
+    return (c[C_ECTBL + 3 * i] << 16) | (c[C_ECTBL + 3 * i + 1] << 8) |
+           c[C_ECTBL + 3 * i + 2];
+}
+
+/* takes the free block with the lowest erase count and erases it */
+static int get_free_vb(uint16_t *vb, uint32_t *ec)
+{
+    unsigned int n = be16(&ftl_hdr[H_NFREE]);
+    unsigned int head = be16(&ftl_hdr[H_HEAD]);
+    unsigned int i, best = head, idx;
+    uint32_t best_ec = 0xffffffff;
+
+    if (n == 0 || head >= RING_SIZE) {
+        return -20;
+    }
+    for (i = 0; i < n; i++) {
+        idx = (head + i) % RING_SIZE;
+        uint32_t e = be32(&ftl_hdr[H_RING_EC + 4 * idx]);
+        if (e < best_ec) {
+            best_ec = e;
+            best = idx;
+        }
+    }
+    /* swap it to the head of the ring */
+    uint16_t bvb = be16(&ftl_hdr[H_RING + 2 * best]);
+    put16(&ftl_hdr[H_RING + 2 * best], be16(&ftl_hdr[H_RING + 2 * head]));
+    put32(&ftl_hdr[H_RING_EC + 4 * best], be32(&ftl_hdr[H_RING_EC + 4 * head]));
+    put16(&ftl_hdr[H_RING + 2 * head], bvb);
+    put32(&ftl_hdr[H_RING_EC + 4 * head], best_ec + 1);
+    if (vfl_erase(bvb)) {
+        return -21;
+    }
+    *vb = bvb;
+    *ec = best_ec + 1;
+    put16(&ftl_hdr[H_HEAD], (head + 1) % RING_SIZE);
+    put16(&ftl_hdr[H_NFREE], n - 1);
+    return 0;
+}
+
+static void add_free_vb(uint16_t vb, uint32_t ec)
+{
+    unsigned int n = be16(&ftl_hdr[H_NFREE]);
+    unsigned int tail = (be16(&ftl_hdr[H_HEAD]) + n) % RING_SIZE;
+    put16(&ftl_hdr[H_RING + 2 * tail], vb);
+    put32(&ftl_hdr[H_RING_EC + 4 * tail], ec);
+    put16(&ftl_hdr[H_NFREE], n + 1);
+}
+
+/* writes the context header with map chunk 'c' to the next page of the
+   chunk's meta stream, like _StoreFTLCxt(1) */
+static int store_cxt(unsigned int c)
+{
+    unsigned int svb = be16(&ftl_hdr[H_STREAM_VB + 2 * c]);
+    unsigned int spg = be16(&ftl_hdr[H_STREAM_PG + 2 * c]);
+    uint32_t vpn = svb * VPAGES_PER_VBLOCK + spg + 1;
+    uint8_t meta[20];
+    int i;
+
+    if (vpn % VPAGES_PER_VBLOCK == 0) {
+        /* the stream's block is full: continue in the spare meta block,
+           the old one becomes the spare */
+        uint16_t nvb = be32(&ftl_hdr[H_SPARE_VB]);
+        uint32_t tmp = be32(&ftl_hdr[H_SPARE_EC]);
+        put32(&ftl_hdr[H_SPARE_VB], svb);
+        if (vfl_erase(nvb)) {
+            return -30;
+        }
+        put32(&ftl_hdr[H_SPARE_EC], be32(&ftl_chunk[c][C_STREAM_EC]));
+        put32(&ftl_chunk[c][C_STREAM_EC], tmp + 1);
+        vpn = nvb * VPAGES_PER_VBLOCK;
+    }
+    put16(&ftl_hdr[H_STREAM_VB + 2 * c], vpn / VPAGES_PER_VBLOCK);
+    put16(&ftl_hdr[H_STREAM_PG + 2 * c], vpn % VPAGES_PER_VBLOCK);
+    put32(&ftl_hdr[H_USN], be32(&ftl_hdr[H_USN]) - 1);
+    put16(&ftl_hdr[H_CACHED], c);
+    for (i = 0; i < FTL_LOGS; i++) {
+        put16(&ftl_hdr[H_LOG_VB + 2 * i], ftl_logs[i].vblock);
+        put16(&ftl_hdr[H_LOG_LBN + 2 * i], ftl_logs[i].lbn);
+        put32(&ftl_hdr[H_LOG_EC + 4 * i], ftl_logs[i].ec);
+    }
+
+    memset(cbuf, 0xff, sizeof(cbuf));
+    memcpy(cbuf, ftl_hdr, 0x200);
+    memcpy(cbuf + 0x200, ftl_chunk[c], 0x600);
+    memset(meta, 0xff, sizeof(meta));
+    memcpy(meta, &ftl_hdr[H_USN], 4);
+    meta[4] = 0x00;
+    ftl_stat_cxt++;
+    return vfl_program(vpn, cbuf, 0x000f, meta);
+}
+
+static void log_init(struct ftl_log *log)
+{
+    memset(log->page, 0xff, sizeof(log->page));
+    memset(log->valid, 0, sizeof(log->valid));
+    log->nfree = 0;
+    log->nvalid = 0;
+    log->dirty = false;
+}
+
+/* _DoSimpleMerge: the newest copy of every page into a fresh block, which
+   becomes the data block; the old data and log blocks are freed */
+static int simple_merge(struct ftl_log *log)
+{
+    unsigned int lbn = log->lbn, p;
+    uint16_t dvb = map_get(lbn), nvb;
+    uint32_t nec;
+    uint8_t meta[20];
+    int rc;
+
+    rc = get_free_vb(&nvb, &nec);
+    if (rc) {
+        return rc;
+    }
+    for (p = 0; p < VPAGES_PER_VBLOCK; p++) {
+        uint32_t src;
+        if (log->page[p] != LOG_NONE) {
+            src = log->vblock * VPAGES_PER_VBLOCK + log->page[p];
+        }
+        else if (dvb < BLOCKS_PER_DIE / 2) {
+            src = dvb * VPAGES_PER_VBLOCK + p;
+        }
+        else {
+            continue;
+        }
+        rc = vfl_read_vpage(src, cbuf, meta);
+        if (rc < 0) {
+            return -40;
+        }
+        if (rc == 1) {
+            continue;           /* blank pages stay blank */
+        }
+        if (vfl_program(nvb * VPAGES_PER_VBLOCK + p, cbuf, 0xffff, meta)) {
+            return -41;
+        }
+    }
+    if (dvb < BLOCKS_PER_DIE / 2) {
+        add_free_vb(dvb, ec_get(lbn));
+    }
+    add_free_vb(log->vblock, log->ec);
+    map_set(lbn, nvb, nec);
+    log->vblock = LOG_UNUSED;
+    log_init(log);
+    put16(&ftl_hdr[H_WL_STATIC], be16(&ftl_hdr[H_WL_STATIC]) + 1);
+    put16(&ftl_hdr[H_WL_META], be16(&ftl_hdr[H_WL_META]) + 1);
+    ftl_stat_merges++;
+    return store_cxt(lbn % FTL_MAP_CHUNKS);
+}
+
+/* _PrepareLog: the log of 'lbn', assigning one if needed */
+static int prepare_log(unsigned int lbn, struct ftl_log **out)
+{
+    struct ftl_log *log = ftl_find_log(lbn), *victim;
+    int i, rc;
+
+    if (log && log->dirty) {
+        /* an interrupted write: merge it like the original firmware */
+        rc = simple_merge(log);
+        if (rc) {
+            return rc;
+        }
+        log = NULL;
+    }
+    if (!log) {
+        /* an assigned but empty log can be reused */
+        for (i = 0; i < FTL_LOGS && !log; i++) {
+            if (ftl_logs[i].vblock != LOG_UNUSED && ftl_logs[i].nfree == 0 &&
+                !ftl_logs[i].dirty) {
+                log = &ftl_logs[i];
+            }
+        }
+        if (!log) {
+            if (be16(&ftl_hdr[H_NFREE]) <= 3) {
+                /* all logs in use: merge the least recently used one */
+                victim = NULL;
+                for (i = 0; i < FTL_LOGS; i++) {
+                    struct ftl_log *l = &ftl_logs[i];
+                    if (l->vblock != LOG_UNUSED && l->lbn >= 2 &&
+                        (!victim || l->age < victim->age)) {
+                        victim = l;
+                    }
+                }
+                if (!victim) {
+                    return -50;
+                }
+                rc = simple_merge(victim);
+                if (rc) {
+                    return rc;
+                }
+            }
+            for (i = 0; i < FTL_LOGS && !log; i++) {
+                if (ftl_logs[i].vblock == LOG_UNUSED) {
+                    log = &ftl_logs[i];
+                }
+            }
+            if (!log) {
+                return -51;
+            }
+            rc = get_free_vb(&log->vblock, &log->ec);
+            if (rc) {
+                log->vblock = LOG_UNUSED;
+                return rc;
+            }
+        }
+        log->lbn = lbn;
+        log_init(log);
+        rc = store_cxt(lbn % FTL_MAP_CHUNKS);
+        if (rc) {
+            return rc;
+        }
+    }
+    log->age = ++ftl_age_counter;
+    *out = log;
+    return 0;
+}
+
+/* appends one full virtual page (16 sectors) of logical block 'lbn' */
+static int write_vpage(unsigned int lbn, unsigned int lpage, const uint8_t *data)
+{
+    struct ftl_log *log;
+    uint8_t meta[20];
+    unsigned int off;
+    int rc;
+
+    rc = prepare_log(lbn, &log);
+    if (rc) {
+        return rc;
+    }
+    if (log->nfree > VPAGES_PER_VBLOCK - 2 + (lpage & 1)) {
+        /* the log is full: merge it and start a new one for this lbn */
+        rc = simple_merge(log);
+        if (rc) {
+            return rc;
+        }
+        rc = get_free_vb(&log->vblock, &log->ec);
+        if (rc) {
+            log->vblock = LOG_UNUSED;
+            return rc;
+        }
+        log->lbn = lbn;
+        log_init(log);
+        log->age = ++ftl_age_counter;
+        rc = store_cxt(lbn % FTL_MAP_CHUNKS);
+        if (rc) {
+            return rc;
+        }
+    }
+    off = log->nfree + ((lpage - log->nfree) & 1);  /* same die */
+
+    memset(meta, 0x0f, sizeof(meta));
+    put32(meta, lpage);
+    meta[4 + 15] = 0x00;                    /* end of transaction */
+    rc = vfl_program(log->vblock * VPAGES_PER_VBLOCK + off, data, 0xffff,
+                     meta);
+    if (rc) {
+        return rc;
+    }
+    if (log->page[lpage] == LOG_NONE) {
+        log->nvalid++;
+    }
+    log->page[lpage] = off;
+    log->valid[lpage] = 0xffff;
+    log->nfree = off + 1;
+    ftl_stat_pages++;
+    return 0;
+}
+
+/* writes sectors to the flash, read-modify-write for partial pages */
+static uint32_t ftl_write_nand(uint32_t sector, uint32_t count,
+                               const uint8_t *src)
+{
+    if (!ftl_ok || !ftl_write_enabled || ftl_write_failed) {
+        return 1;
+    }
+    if (sector < ftl_write_first || sector + count > ftl_write_end) {
+        return 2;
+    }
+    nand_set_active();
+    while (count) {
+        unsigned int lbn = sector / SECTORS_PER_LBLOCK;
+        unsigned int lpage = (sector / SECTORS_PER_VPAGE) % VPAGES_PER_VBLOCK;
+        unsigned int sec = sector % SECTORS_PER_VPAGE;
+        unsigned int n = MIN(count, SECTORS_PER_VPAGE - sec);
+        const uint8_t *data;
+        int rc;
+
+        if (n == SECTORS_PER_VPAGE) {
+            data = src;
+        }
+        else {
+            if (ftl_read_nand(sector - sec, SECTORS_PER_VPAGE, wbuf)) {
+                return wfail(3);
+            }
+            memcpy(wbuf + sec * SECTOR_SIZE, src, n * SECTOR_SIZE);
+            data = wbuf;
+        }
+        rc = write_vpage(lbn, lpage, data);
+        if (rc) {
+            return wfail(rc < 0 ? -rc : rc);
+        }
+        src += n * SECTOR_SIZE;
+        sector += n;
+        count -= n;
+    }
+    return 0;
+}
+
+/* the FAT32 partition of the MBR is the only writable area */
+static void ftl_write_setup(void)
+{
+    ftl_write_first = ftl_write_end = 0;
+    if (ftl_read_nand(0, 1, buf)) {
+        return;
+    }
+    if (buf[0x1fe] != 0x55 || buf[0x1ff] != 0xaa) {
+        return;
+    }
+    uint32_t start = buf[0x1c6] | (buf[0x1c7] << 8) | (buf[0x1c8] << 16) |
+                     ((uint32_t)buf[0x1c9] << 24);
+    uint32_t size = buf[0x1ca] | (buf[0x1cb] << 8) | (buf[0x1cc] << 16) |
+                    ((uint32_t)buf[0x1cd] << 24);
+    /* sanity: inside the visible area, before the hidden firmware area */
+    if (start == 0 || size == 0 || start + size > 7786496) {
+        return;
+    }
+    ftl_write_first = start;
+    ftl_write_end = start + size;
+}
+
+void ftl_write_log(void (*logf_fn)(const char *fmt, ...))
+{
+    logf_fn("ftl write: en %d failed %d range %lu-%lu pages %lu merges %lu "
+            "cxt %lu erases %lu free %d", ftl_write_enabled, ftl_write_failed,
+            (unsigned long)ftl_write_first, (unsigned long)ftl_write_end,
+            ftl_stat_pages, ftl_stat_merges, ftl_stat_cxt, ftl_stat_erases,
+            be16(&ftl_hdr[H_NFREE]));
+}
+
+#ifdef FTL_SIM
+/* host test hooks (utils/s5l8700_dfu/ftlsim) */
+void ftl_sim_set_range(uint32_t first, uint32_t end)
+{
+    ftl_write_first = first;
+    ftl_write_end = end;
+}
+
+/* checks the invariants the original firmware relies on */
+int ftl_sim_check(void (*logf_fn)(const char *fmt, ...))
+{
+    static uint8_t owner[BLOCKS_PER_DIE / 2];
+    int errors = 0, i, used = 0;
+    unsigned int n = be16(&ftl_hdr[H_NFREE]), head = be16(&ftl_hdr[H_HEAD]);
+    const uint16_t *meta = vfl_counter[0] >= vfl_counter[1] ? vfl_meta[0]
+                                                             : vfl_meta[1];
+    memset(owner, 0, sizeof(owner));
+#define CLAIM(vb, what) do { unsigned int v_ = (vb); \
+        if (v_ >= BLOCKS_PER_DIE / 2) { logf_fn("bad vb %u (%s)", v_, what); errors++; } \
+        else if (owner[v_]) { logf_fn("vb %u used twice (%s, %d)", v_, what, owner[v_]); errors++; } \
+        else owner[v_] = 1; } while (0)
+    for (i = 0; i < (int)ftl_lblocks; i++) CLAIM(map_get(i), "map");
+    for (i = 0; i < FTL_LOGS; i++) {
+        if (ftl_logs[i].vblock == LOG_UNUSED) continue;
+        used++;
+        CLAIM(ftl_logs[i].vblock, "log");
+        if (ftl_logs[i].dirty) { logf_fn("log %d dirty", i); errors++; }
+        int p;
+        for (p = ftl_logs[i].nfree; p < ftl_logs[i].nfree + 3 && p < 256; p++) {
+            vfl_read_spare(ftl_logs[i].vblock * 256 + p, spare);
+            if (!spare_empty(spare)) { logf_fn("log %d page %d after commit not blank", i, p); errors++; }
+        }
+        for (p = 0; p < 256; p++)
+            if (ftl_logs[i].page[p] != LOG_NONE && (ftl_logs[i].page[p] & 1) != (p & 1)) {
+                logf_fn("log %d page %d parity", i, p); errors++;
+            }
+    }
+    for (i = 0; i < (int)n; i++)
+        CLAIM(be16(&ftl_hdr[H_RING + 2 * ((head + i) % RING_SIZE)]), "free");
+    for (i = 0; i < 9; i++) {
+        unsigned int svb = be16(&ftl_hdr[H_STREAM_VB + 2 * i]);
+        unsigned int spg = be16(&ftl_hdr[H_STREAM_PG + 2 * i]);
+        CLAIM(svb, "stream");
+        if (spg < 255) {
+            vfl_read_spare(svb * 256 + spg + 1, spare);
+            if (!spare_empty(spare)) { logf_fn("stream %d next page not blank", i); errors++; }
+        }
+    }
+    CLAIM(be32(&ftl_hdr[H_SPARE_VB]), "spare meta");
+    /* the stream + spare blocks must be the VFL's meta list */
+    for (i = 0; i < FTL_META_BLOCKS; i++)
+        if (meta[i] >= BLOCKS_PER_DIE / 2 || !owner[meta[i]]) {
+            logf_fn("meta list vb %u not a stream/spare block", meta[i]); errors++;
+        }
+    if (n + used != 15) { logf_fn("free %u + logs %d != 15", n, used); errors++; }
+    logf_fn("check: free %u logs %d usn %08lx errors %d", n, used,
+            (unsigned long)be32(&ftl_hdr[H_USN]), errors);
+    return errors;
+}
+#endif
+
 #ifdef BOOTLOADER
 uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
 {
@@ -663,10 +1303,7 @@ uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
 
 uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
 {
-    (void)sector;
-    (void)count;
-    (void)buffer;
-    return 1;   /* read only */
+    return ftl_write_nand(sector, count, buffer);
 }
 #else
 /*  Until the FTL can write, writes go to a RAM overlay and are lost at power
