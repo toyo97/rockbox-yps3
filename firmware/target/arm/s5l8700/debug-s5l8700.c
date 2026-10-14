@@ -182,6 +182,14 @@ bool dbg_hw_info(void)
         _DEBUG_PRINTF("P5: %02x (charging %s)", (unsigned)PDAT5,
                       charging_state() ? "yes" : "no");
         _DEBUG_PRINTF("CPU: %ld MHz", cpu_frequency / 1000000);
+        {
+            extern unsigned long tkey_words, tkey_bad;
+            extern int tkey_hist[8];
+            _DEBUG_PRINTF("tkey n %lu bad %lu btn %03x", tkey_words, tkey_bad,
+                          button_status());
+            _DEBUG_PRINTF("%05x %05x %05x %05x", tkey_hist[0], tkey_hist[1],
+                          tkey_hist[2], tkey_hist[3]);
+        }
 #ifdef HAVE_USBSTACK
         {
             extern unsigned long usb_dbg_irqs, usb_dbg_resets, usb_dbg_setups,
@@ -218,8 +226,6 @@ bool dbg_hw_info(void)
             _DEBUG_PRINTF("refused %lu last %lu", ftl_write_refused,
                           ftl_write_refused_sector);
         }
-        _DEBUG_PRINTF("P5.2 %d P5.3 %d (left/right toggle)",
-                      (PDAT5 >> 2) & 1, (PDAT5 >> 3) & 1);
 #else
         (void)i;
 #endif
@@ -248,12 +254,6 @@ bool dbg_hw_info(void)
                 break;
 #endif
 #ifdef SAMSUNG_YPS3
-            case BUTTON_LEFT:
-                PDAT5 ^= (1 << 2);
-                break;
-            case BUTTON_RIGHT:
-                PDAT5 ^= (1 << 3);
-                break;
 #ifdef HAVE_USBSTACK
             case BUTTON_UP:
             {

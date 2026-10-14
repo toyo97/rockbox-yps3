@@ -64,6 +64,10 @@ void button_init_device(void)
 }
 
 /* returns the raw 20-bit word from the touch key controller */
+/* for the debug screen */
+unsigned long tkey_words, tkey_bad;
+int tkey_hist[8];
+
 static int tkey_read(void)
 {
     static int value = 0;
@@ -97,6 +101,13 @@ static int tkey_read(void)
         /* acknowledge on DCLK */
         PDAT3 |= (1 << 4);
     }
+
+    /* debug: the last words received, newest first */
+    tkey_words++;
+    for (i = 7; i > 0; i--) {
+        tkey_hist[i] = tkey_hist[i - 1];
+    }
+    tkey_hist[0] = value;
     return value;
 }
 
