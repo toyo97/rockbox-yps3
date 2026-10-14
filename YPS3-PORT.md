@@ -1,40 +1,40 @@
 # Rockbox on the Samsung YP-S3: port notes
 
-This branch revives the Rockbox port to the Samsung YP-S3. Bertrik Sikken
-started the port in 2009-2010. Upstream Rockbox deleted it in February 2026
-(commit `1a33d7990`, "Remove Meizu M3/M6SL/M6SP and Samsung YP-S3 ports")
-because it no longer compiled and it had never been able to read the
-internal flash.
+This tree revives the Rockbox port to the Samsung YP-S3.
+[Bertrik Sikken](https://github.com/bertrik) started the port in 2009-2010.
+Upstream Rockbox deleted it in February 2026 (commit `1a33d7990`, "Remove
+Meizu M3/M6SL/M6SP and Samsung YP-S3 ports") because it no longer compiled
+and it had never been able to read the internal flash. For an overview and
+downloads, see the [README](README.md).
 
-**Status (October 2026): Rockbox runs on the player, started over USB
-(DFU). Music plays from the internal flash, in stereo, and the FM radio
-works. Rockbox writes to the music partition (settings, USB file
-transfer); the firmware area is only written by the player's own
-bootloader (see "For the owner" below).**
+**Status: Rockbox is installed permanently next to the original firmware
+and works day to day on a 4 GB player: playback, FM radio, USB mass
+storage, saving settings and files. Only that one player has been tested.**
 
 ### What works on the hardware
 
 | Part | Status |
 |---|---|
 | DFU loading (`s5l8700_dfu.py`) | works |
-| LCD (type 2), backlight, button lights, touch keys, RTC, ADC | works |
+| LCD (type 2) with sleep, backlight, button lights, touch keys, RTC, ADC | works |
 | SDRAM (32 MB, timings from the original stage 1 loader) | works |
 | CPU 196 MHz with caches, 100 Hz tick | works (see pitfalls) |
-| Whimory VFL/FTL, read only (`ftl-yps3.c`) | works, mount in ~0.6 s |
+| Whimory VFL/FTL (`ftl-yps3.c`), reads and writes | works, mount in ~0.6 s |
 | NAND DMA, hardware ECC | work, enabled after start-up self-tests |
-| USB test bootloader: NAND reader, upload-and-run | works |
-| Full Rockbox: menus, file browser | works |
+| Full Rockbox: menus, file browser, database, themes, plugins | works |
 | Playback (WM1800 codec, I2S DMA), headphones | works, stereo |
 | FM radio (tuner answers with DEVICEID 0x1B63) | works, scan finds stations |
 | USB mass storage | works, reads ~1.6-1.9 MB/s, writes ~0.56 MB/s |
-| Writing to the flash (music partition) | works |
 | Permanent install (`S3.ROM`) | works: Rockbox, or the original firmware with the power slider |
-| Battery calibration, power off on battery | not done |
+| Charging, battery level, power off at low battery | works; the discharge curve is not finely calibrated |
+| FM recording | WAV files are written but silent; under investigation |
+| Video (mpegplayer) | being tested |
+| LCD type 1 | written in 2009, never tested |
 
-## For the owner: install, go back, rescue
+## Install, go back, rescue
 
-**Not all of this has been tried on the player yet; steps marked
-[NOT YET TESTED] are unverified.** Background and open questions:
+**Steps marked [NOT YET TESTED] are unverified; everything else was done
+on the tested player.** Background and open questions:
 `docs/YPS3-INSTALL-DESIGN.md`.
 
 ### How it works
@@ -55,8 +55,8 @@ stops on its last frame, let go.
 
 ### What must be kept
 
-* `nanddump/backup/` (git doesn't track it): the backup of this player's
-  flash, made with `yps3_backup.py`. `hidden_area_ecc.img` in it is **the
+* `nanddump/backup/` (git doesn't track it): the backup of your player's
+  flash, made with `yps3_backup.py` (see "Back up the flash" below). `hidden_area_ecc.img` in it is **the
   only copy of the original firmware.** Keep a copy of the directory
   somewhere other than this PC.
 * The build directories `build-yps3` (bootloader), `build-yps3-dev`
@@ -81,6 +81,28 @@ sudo cp utils/s5l8700_dfu/99-s5l8700-dfu.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
+### Back up the flash
+
+Before anything else, copy the parts of the flash that hold the original
+firmware and the file system tables. This only reads from the player.
+
+1. Put the player in DFU mode (see "Rescue" below for how).
+2. Start the development bootloader (`build-yps3-dev/rockboot.ebn`, or
+   `dev/rockboot.ebn` from the CI download), wait until it answers, then
+   copy:
+
+```sh
+python3 utils/s5l8700_dfu/s5l8700_dfu.py run build-yps3-dev/rockboot.ebn
+until python3 utils/s5l8700_dfu/yps3_nanddump.py info; do sleep 5; done
+python3 utils/s5l8700_dfu/yps3_backup.py nanddump/backup
+```
+
+3. Keep `nanddump/backup/` somewhere safe, away from this PC too. Switch
+   the player off and on to get back to the original firmware.
+
+Samsung's firmware is not distributed with this repository; your backup
+(or an official Samsung `S3.ROM` for the YP-S3) is the only source of it.
+
 ### Prepare the images
 
 ```sh
@@ -93,11 +115,11 @@ sha256sum nanddump/install/S3-original.ROM
 ```
 
 `extract` checks the image against the checksum stored in it and refuses
-`hidden_area.img`, the copy without error correction. The sha256 of this
-player's original firmware must be
-`b0a98ac9cfde9b34f6a262a31224f8b5abe667f84c5fd0d5ae68ffab955e54bc`
-(built Tue Mar 24 16:54:23 2009). An official Samsung `S3.ROM` for the
-YP-S3 can replace it. `yps3_mkrom.py info FILE` shows what an image is.
+`hidden_area.img`, the copy without error correction. On the tested
+player the original firmware was built Tue Mar 24 16:54:23 2009, sha256
+`b0a98ac9cfde9b34f6a262a31224f8b5abe667f84c5fd0d5ae68ffab955e54bc`;
+other players may have other versions. An official Samsung `S3.ROM` for
+the YP-S3 can replace it. `yps3_mkrom.py info FILE` shows what an image is.
 
 ### Finding the music drive
 
@@ -118,7 +140,7 @@ but an MTP device (`mtp://...`).
 
 Once, before installing: write the original firmware over itself. Nothing
 changes, but it proves that the player takes `S3.ROM` from the drive.
-**Done on this player (October 2026): it worked.**
+**Tested: it worked.**
 
 1. Charge the battery. Get the music drive mounted: start Rockbox over DFU
    (Rescue, way A) and plug the cable in.
@@ -140,7 +162,7 @@ utils/s5l8700_dfu/yps3-install.sh MUSIC_DRIVE
 unplug, switch off, switch on. The player writes the new firmware,
 `S3.ROM` disappears and Rockbox starts.
 
-Daily use (both tested, October 2026): switch on as usual for Rockbox.
+Daily use (both tested): switch on as usual for Rockbox.
 For the original firmware, keep the power slider pushed through the whole
 start animation; when it stops on its last frame, let go. Power and hold
 are the same slider, so the hold position can't be used to choose. With
@@ -158,13 +180,13 @@ Through Rockbox's USB drive (the normal way):
    settings may be reset. Delete `.rockbox` from the drive if you like.
 
 Through MTP, when the original firmware starts but Rockbox doesn't
-(tested, October 2026):
+(tested):
 
 1. Start the original firmware (power slider pushed through the start
    animation, see Install), plug the cable in, and open the
    player once in the file manager so that it gets mounted.
 2. `gio mount -l` shows the player's address, like
-   `mtp://Samsung_Electronics_Co._Ltd._S3_a73f4368000000cd/`. Its storage
+   `mtp://Samsung_Electronics_Co._Ltd._S3_<serial>/`. Its storage
    folder `S3` is the music drive's top folder (`gio list` on it shows
    `Music` and `.rockbox`).
 3. `utils/s5l8700_dfu/yps3-restore.sh --mtp mtp://<device>/S3/`
@@ -243,7 +265,7 @@ music), so a very broken drive may already be repaired after a restart.
 ### When S3.ROM stays, and what an update looks like
 
 The player shows a short upgrade screen, then starts the new firmware
-(seen with the original firmware, October 2026). Charge the battery
+(seen with the original firmware). Charge the battery
 first, unplug the cable, and don't switch off until a firmware has
 started. Afterwards `S3.ROM` is gone from the drive (checked).
 
@@ -261,182 +283,33 @@ off and on:
 
 ## The hardware
 
-| Part | What it is | Rockbox driver status |
+| Part | What it is | Driver |
 |---|---|---|
-| SoC | Samsung S5L8700, ARM940T core. Rockbox runs it in big-endian mode, like the Meizu players. | CPU, timers, interrupts, DMA, I2C and ADC are shared with the iPod Nano 2G and Meizu ports |
-| Internal RAM | 256 KB IRAM | used by the test bootloader |
-| SDRAM | Samsung K4M561633G, 256 Mbit = **32 MB** | **not initialised yet** (timings unknown) |
-| LCD | 176x220, RGB565, on the NOR/SRAM bus. Two panel types exist, detected on P0.4 | type 2 working in 2009, type 1 written but never tested (`yps3/lcd-yps3.c`) |
-| Keys | Melfas capacitive touch keys, plus hold and power switches | working (`yps3/button-yps3.c`) |
-| Button lights, backlight | GPIO and PWM | working (`yps3/backlight-yps3.c`) |
-| FM radio | Silicon Labs Si4703 (Si4700 with RDS), I2C address 0x20 | working (generic `si4700.c`) |
-| Audio codec | Wolfson WM1800G, I2C address 0x34. Undocumented, register layout close to the WM8960 | volume test only, no codec driver yet |
-| Headphone detect, battery/USB ADC, charger | GPIO / ADC | working |
-| RTC | S35390A-like, I2C 0x60-0x6F | working in 2009 |
-| NAND | Samsung K9LBG08U0M MLC: 4 KB pages + 128 B spare, 128 pages (512 KB) per block, 4 GB per chip. Chip selects 2 and 3 are driven by GPIO (P6.5, P6.6) | chip IDs worked in 2009. Raw page reads added on this branch (**untested**) |
-| USB device | S5L8700 USB core (not the OTG core of the Nano 2G) | stub only |
+| SoC | Samsung S5L8700, ARM940T core, run big-endian like the Meizu players | CPU, timers, interrupts, DMA, I2C, ADC shared with the iPod Nano 2G and Meizu ports |
+| Memory | 256 KB IRAM, 32 MB SDRAM (Samsung K4M561633G) | `yps3/sdram-yps3.c` |
+| LCD | 176x220, RGB565, on the NOR/SRAM bus; two panel types, detected on P0.4 | `yps3/lcd-yps3.c`, type 2 tested |
+| Keys | Melfas capacitive touch keys, power/hold slider | `yps3/button-yps3.c` |
+| FM radio | Si470x-compatible tuner (DEVICEID 0x1B63), I2C address 0x20 | generic `si4700.c` |
+| Audio codec | Wolfson WM1800, I2C address 0x34; undocumented, register map of the WM8960 | `drivers/audio/wm1800.c` |
+| NAND | Samsung K9LBG08U0M MLC, 4 KB pages + 128 B spare, Whimory FTL | `yps3/nand-yps3.c`, `yps3/ftl-yps3.c` |
+| USB | S5L8700 device controller (S3C-HSUDC style, not the Nano 2G's OTG core) | `yps3/usb-yps3.c` |
+| Battery, charger, headphones, RTC | ADC, GPIO, S35390A-like RTC on I2C | `yps3/power-yps3.c`, `yps3/powermgmt-yps3.c` |
 
-## What this branch adds
+## DFU mode
 
-* The YP-S3 target is back in `tools/configure` as target 143, `samsungyps3`,
-  bootloader only.
-* The 2009 drivers are restored in `firmware/target/arm/s5l8700/yps3/`, and
-  the bit-rot is fixed so the bootloader builds with a current GCC (13.2).
-* **A linker layout for running from RAM over USB.** The old `boot.lds` put
-  the code in the NOR flash window at `0x24000000`, which the YP-S3 doesn't
-  have. Bertrik's thread says he used a local linker script for DFU that was
-  never committed. The image is now linked into IRAM. `crt0.S` copies the
-  image to its link address first, so it runs wherever the boot ROM loads it
-  (the Meizu M3 boot ROM loads to `0x22020000`).
-* A slot for the DFU length word at offset `0x24` of the image. Before this,
-  the loader overwrote a literal-pool entry there.
-* **A NAND probe** in the test bootloader (`bootloader/samsung_yps3.c`). It
-  reads raw pages, shows them as hex and scans the chip for signs of the
-  "Whimory" FTL that Rockbox already implements for the Nano 2G.
-* `utils/s5l8700_dfu/s5l8700_dfu.py`: a Python and pyusb loader that uploads
-  an image through the boot ROM's DFU mode and runs it from RAM. It uses the
-  protocol of the old `meizu_dfu` tool.
-* A GitHub Actions workflow that builds `rockboot.ebn` on every push. You can
-  download it from the run's artifacts without installing a toolchain.
-
-## How a Rockbox port is put together
-
-```
-apps/  lib/rbcodec/  plugins      UI, playback, codecs, database, themes
-        |                         generic, reused unchanged (the vast majority of the code)
-firmware/  kernel, FAT, fonts     generic
-        |
-firmware/target/arm/s5l8700/      SoC drivers, shared with Nano 2G and Meizu
-        |
-firmware/target/arm/s5l8700/yps3/ board drivers: LCD, keys, power, NAND...
-firmware/export/config/samsungyps3.h   hardware description
-bootloader/samsung_yps3.c         first program that runs on the device
-```
-
-A new player needs the bottom two layers. For the YP-S3, many of those
-drivers are already shared or written. The remaining work is in the
-storage, boot and audio paths.
-
-## Main challenges, hardest first
-
-1. **Reading the internal flash (the FTL).** Samsung's firmware stores its
-   file system behind a flash translation layer ("Whimory"), which handles
-   wear levelling, bad blocks and ECC. Rockbox can't see a single file until
-   it understands that layer. Rockbox has a full Whimory implementation for
-   the iPod Nano 2G (`ipodnano2g/ftl-nano2g.c`, about 2200 lines), and the
-   NAND probe tests whether the YP-S3 uses the same format. The wiki found
-   the string `"220W"` at NAND offset `0x7F000`, probably "Whimory 2.2.0".
-   Four things can differ:
-   * page size. The Nano 2G driver hard-codes 2 KB pages, but the YP-S3 chip
-     has 4 KB pages with a 128-byte spare area, so at least the low-level
-     layer and the spare layout need adapting;
-   * the on-flash layout, which the probe checks;
-   * the ECC engine, which differs between the S5L8700 and S5L8701 (the status
-     register bit positions already differ, see `nand-yps3.c`);
-   * byte order. The Nano 2G runs little-endian and the YP-S3 big-endian, so
-     the FTL structures read from flash need byte swapping, or the CPU has to
-     be switched to little-endian.
-2. **Starting Rockbox without the USB cable.** Today the code only runs
-   through DFU. A real install has to put a Rockbox bootloader where the boot
-   ROM or Samsung's bootloader will start it. There's good news here: the wiki
-   found DFU-format images (with the same `CUFD` marker at `+0x20` as our
-   `rockboot.ebn`) stored raw at NAND offsets `0x82000`, `0x102000` and
-   `0x180000`, followed by Samsung's bootloader at `0x188000`. So the boot ROM
-   probably boots from NAND the same image format it accepts over USB, without
-   encryption. We still need to confirm which copy it uses and how it checks
-   it.
-   **This is the step that could brick the player.** It stays recoverable only
-   if DFU mode still works, which is likely because DFU lives in the mask ROM.
-3. **SDRAM initialisation.** The full Rockbox needs the 32 MB SDRAM. The
-   controller timings can be found by disassembling Samsung's firmware. The
-   Meizu values in old `crt0.S` revisions are a starting point.
-4. **Audio playback.** This needs an I2S/PCM driver (`pcm-s5l8700.c` exists
-   and is shared) and a codec driver for the WM1800, which looks close to the
-   WM8960. Rockbox has drivers for similar Wolfson parts.
-5. **USB mass storage.** This needs a driver for the S5L8700 USB device core,
-   which isn't written yet. Until then, files reach the player through the
-   original firmware's MTP/UMS mode, as long as Rockbox can read the same FTL.
-6. Smaller items: keymap (`apps/keymaps/`), battery discharge curve, charging,
-   CPU frequency scaling, sleep/power-off.
-
-A full `--type=n` build gets far today and fails on about 10 missing pieces:
-keymap, audio codec, SDRAM timings and the debug screen.
-
-## DFU mode facts (from the wiki)
-
-* **How to enter it:** with the USB cable plugged in, hold the power switch,
-  press the reset hole with a pin for 1-2 s, release the pin, then shortly
-  after release the power switch (releasing both almost together boots the
-  firmware instead). The screen stays dark.
+* With the USB cable plugged in: hold the power slider down, press the
+  reset hole with a pin for 1-2 s, release the pin, then shortly after the
+  power slider (releasing both almost together starts the firmware
+  instead). The screen stays dark.
 * The player then appears as USB device **`0419:0145`**, the same as the
-  Meizu M6SL. The old `meizu_dfu` tool works with it, and our loader uses the
-  same protocol with the standard "UFD" suffix by default.
-* The M6SL boot ROM loads images at the start of IRAM (`0x22000000`), where
-  the bootloader is linked, so it should not need to copy itself at all. The
-  self-copy only matters if the boot ROM loads it somewhere else.
-* Samsung's service tool "BluesUtilNand" is a DFU image that gives raw
-  access to the NAND over USB. If you can find it, it is the fastest way to
-  dump the flash for FTL analysis.
+  Meizu M6SL. `s5l8700_dfu.py` uploads an image to RAM and runs it, with
+  the protocol of the old `meizu_dfu` tool. DFU is in the chip's mask ROM,
+  so it works whatever is on the flash.
+* On Windows, install the WinUSB driver for the DFU device with Zadig.
 
-### Known NAND layout (byte offsets from the wiki)
+## Notes from the port
 
-| Offset | Size | Content |
-|---|---|---|
-| `0x00000000` | 4 | `00000000`, an initial marker? |
-| `0x0007F000` | 4 | `"220W"`, probably Whimory 2.2.0 |
-| `0x00082000` | `0x8000` | DFU image (`CUFD` at `+0x20`), strings mention "NOR SST 2M" |
-| `0x00102000` | `0x8000` | the same DFU image |
-| `0x00180000` | `0x8000` | the same DFU image |
-| `0x00188000` | `0x18C000` | Samsung bootloader: FTL code and the glowing S3 logo |
-| `0x04F80000` | | tables, FAT or FTL |
-| `0x05880000` | | file data (MP3) |
-
-## Testing on a real player
-
-The test is read-only. The bootloader runs from RAM and only sends
-reset, read-ID, read-status and read-page commands to the NAND, so nothing on
-the player is modified. Unplug the player to get back to the original
-firmware. If it doesn't come back, hold the power slider to switch it off.
-
-1. **Get the binary.** Download `yps3-test-bootloader` from the latest
-   GitHub Actions run, or build it yourself (see the next section).
-2. **Put the player in DFU mode:** with the USB cable plugged in, hold the
-   power switch, press the reset hole with a pin for 1-2 s, release the
-   pin, then shortly after the power switch. The screen stays dark.
-3. Run `python3 s5l8700_dfu.py list`, using `sudo` on Linux. It should show
-   `0419:0145`.
-4. Run `python3 s5l8700_dfu.py run rockboot.ebn`. If nothing happens, try
-   again with `--sig RON`. On Windows, first install the WinUSB driver for the
-   DFU device with Zadig.
-5. **Watch the LED behind the middle button:** it blinks once for LCD type 1
-   and twice for type 2. Only type 2 has been tested, so if the screen stays
-   blank, the blink count tells us which display driver to fix.
-6. **Expected result:** the Rockbox logo, then a debug screen with GPIO
-   values, RTC, FM, ADC and NAND IDs. Check the following:
-   * Up/Down change the volume.
-   * Left/Right tune the radio. Headphones act as the antenna.
-   * Menu/Back change the brightness.
-   * The button lights follow your finger.
-   * Power switches the player off.
-7. **NAND probe:** press **Select**. Take photos of:
-   * page 0 of each bank (Menu switches banks);
-   * a few blocks further in (Right moves one block on);
-   * **self-check of the raw reads:** with 4 KB pages, the wiki's byte
-     offsets map to pages. On bank 0, page 127 (Down from page 128, or Up
-     127 times) should start with `220W`. Page 130 should show `CUFD` (or
-     `DFUC`) at data offset `0x20`. If they do, the low-level NAND read
-     works;
-   * the result screen of **Back** (scan). The scan takes a few seconds per
-     chip.
-
-   Report the IDs and the scan counts. This is the key information for the
-   storage driver. The K9LBG08U0M should read as `B655D7EC` (bytes
-   EC D7 55 B6), decoded as `4096+128 128pg/blk 8192blk`.
-
-## Status on real hardware (October 2026)
-
-Tested over DFU on a 4 GB player: LCD type 2, one K9LBG08U0M chip. See the
-table at the top.
+Tested on a 4 GB player: LCD type 2, one K9LBG08U0M chip.
 
 ### Pitfalls found on the way
 
@@ -505,9 +378,10 @@ table at the top.
 * Samsung's bootloader (blocks 4-6) contains the whole Whimory stack (TFS4
   Light, VFL, FTL) with debug strings and macro text. Its function names
   (`_LoadVFLCxt`, `VFL_Read(nVpn)`, `_GetReservedBlk`, log blocks) match
-  the design behind Rockbox's Nano 2G FTL. **Next step:** disassemble it to
-  learn the VFL context, map table and log block formats, then adapt
-  `ftl-nano2g.c`.
+  the design behind Rockbox's Nano 2G FTL. `ftl-yps3.c` follows its
+  formats (VFL context, map tables, log blocks), and the writer keeps the
+  flash readable by the original firmware. `utils/s5l8700_dfu/ftlsim` runs
+  the FTL code on a PC, for tests and benchmarks.
 
 ## Building
 
@@ -529,7 +403,14 @@ make -j$(nproc)          # -> rockboot.ebn (bootloader)
 mkdir ../build-yps3-full && cd ../build-yps3-full
 ../tools/configure --target=samsungyps3 --type=n
 make -j$(nproc) && make zip   # -> rockbox.yps3, rockbox.zip (.rockbox)
+
+mkdir ../build-manual && cd ../build-manual
+../tools/configure --target=samsungyps3 --type=m
+make manual                   # -> rockbox-manual.pdf (needs LaTeX)
 ```
+
+The GitHub Actions workflow (`.github/workflows/yps3-build.yml`) runs the
+same steps on every push.
 
 ### Development loop
 
@@ -551,16 +432,13 @@ make -j$(nproc) && make zip   # -> rockbox.yps3, rockbox.zip (.rockbox)
 
 ## Roadmap
 
-1. Done: DFU loading, SDRAM, read-only FTL, full Rockbox, playback, radio.
-2. FTL writes (settings, USB file transfer). Risky for the data on the
-   flash, so it waits for the owner's go-ahead.
-3. USB mass storage in Rockbox (the UDC is S3C2443-like, see
-   `bootloader/samsung_yps3_usb.c`).
-4. Battery calibration, power off on battery, LCD sleep, CPU frequency
-   scaling.
-5. A permanent bootloader install through the player's own `S3.ROM`
-   firmware update ("For the owner" above), waiting for the owner's
-   go-ahead.
+1. FM recording: the files are silent. The HW info screen shows what the
+   I2S receiver delivers (`rec n ... nz ...` lines) to tell missing data
+   from zeros.
+2. mpegplayer on big-endian ARM: confirm the assembler on hardware, and the
+   start-up stutter while the buffer fills.
+3. Battery: calibrate the discharge curve.
+4. Untested hardware: LCD type 1 panels, other capacities and flash chips.
 
 ## References
 

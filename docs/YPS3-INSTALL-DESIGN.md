@@ -261,8 +261,8 @@ past N keep stale data, as they do today.
 ## 4. Procedures
 
 The owner's procedures (preparing the images, the no-op upgrade, install,
-going back, DFU rescue, broken music drive) are in `YPS3-PORT.md`, "For
-the owner". The tools: `utils/s5l8700_dfu/yps3_mkrom.py` (`info`,
+going back, DFU rescue, broken music drive) are in `YPS3-PORT.md`, "Install,
+go back, rescue". The tools: `utils/s5l8700_dfu/yps3_mkrom.py` (`info`,
 `extract`, `combine`, `verify`, `copy`, `selftest`),
 `yps3-install.sh` and `yps3-restore.sh` (also `--mtp`). Image files
 live in `nanddump/install/` (not tracked by git).

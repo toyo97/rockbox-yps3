@@ -1,0 +1,84 @@
+name: YP-S3 build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi zip
+          # Rockbox looks for the arm-elf-eabi- prefix
+          mkdir -p "$HOME/bin"
+          for t in /usr/bin/arm-none-eabi-*; do
+            n=$(basename "$t")
+            ln -s "$t" "$HOME/bin/${n/arm-none-eabi/arm-elf-eabi}"
+          done
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Big-endian libgcc
+        run: tools/libgcc-be/build.sh "$HOME/.local/rockbox-libgcc-be"
+
+      - name: Bootloader
+        run: |
+          mkdir build-yps3 && cd build-yps3
+          ../tools/configure --target=samsungyps3 --type=b </dev/null
+          make -j"$(nproc)"
+
+      - name: Development bootloader (no autoboot, for backups and rescue)
+        run: |
+          mkdir build-yps3-dev && cd build-yps3-dev
+          ../tools/configure --target=samsungyps3 --type=b </dev/null
+          sed -i 's/^export GCCOPTS=/export GCCOPTS=-DYPS3_NO_AUTOBOOT /' Makefile
+          make -j"$(nproc)"
+
+      - name: Firmware
+        run: |
+          mkdir build-yps3-full && cd build-yps3-full
+          ../tools/configure --target=samsungyps3 --type=n </dev/null
+          make -j"$(nproc)"
+          make zip
+
+      - name: Package
+        run: |
+          mkdir -p out/dev out/tools
+          cp build-yps3-full/rockbox.zip build-yps3/rockboot.ebn out/
+          cp build-yps3-dev/rockboot.ebn out/dev/
+          cp utils/s5l8700_dfu/*.py utils/s5l8700_dfu/*.sh \
+             utils/s5l8700_dfu/99-s5l8700-dfu.rules out/tools/
+          cp README.md YPS3-PORT.md out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yps3-rockbox
+          path: out/
+
+  manual:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LaTeX
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends texlive-latex-base \
+            texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-plain-generic lmodern
+
+      - name: Manual
+        run: |
+          mkdir build-manual && cd build-manual
+          ../tools/configure --target=samsungyps3 --type=m </dev/null
+          make manual
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yps3-manual
+          path: build-manual/rockbox-manual.pdf
