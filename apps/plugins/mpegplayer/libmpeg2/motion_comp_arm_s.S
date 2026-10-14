@@ -48,16 +48,27 @@ MC_put_o_16_align0:
         bne MC_put_o_16_align0
         ldmpc regs=r4-r7 @@ update PC with LR content.
 
+@ The first byte in memory is the lowest one of a word on little endian
+@ ARM, the highest one on big endian ARM (Samsung YP-S3): the shifts that
+@ realign words and pick the next pixel go the other way there.
+#ifdef ROCKBOX_BIG_ENDIAN
+#define FWD lsl
+#define BWD lsr
+#else
+#define FWD lsr
+#define BWD lsl
+#endif
+
 .macro  ADJ_ALIGN_QW shift, R0, R1, R2, R3, R4
-        mov \R0, \R0, lsr #(\shift)
-        orr \R0, \R0, \R1, lsl #(32 - \shift)
-        mov \R1, \R1, lsr #(\shift)
-        orr \R1, \R1, \R2, lsl #(32 - \shift)
-        mov \R2, \R2, lsr #(\shift)
-        orr \R2, \R2, \R3, lsl #(32 - \shift)
-        mov \R3, \R3, lsr #(\shift)
-        orr \R3, \R3, \R4, lsl #(32 - \shift)
-        mov \R4, \R4, lsr #(\shift)
+        mov \R0, \R0, FWD #(\shift)
+        orr \R0, \R0, \R1, BWD #(32 - \shift)
+        mov \R1, \R1, FWD #(\shift)
+        orr \R1, \R1, \R2, BWD #(32 - \shift)
+        mov \R2, \R2, FWD #(\shift)
+        orr \R2, \R2, \R3, BWD #(32 - \shift)
+        mov \R3, \R3, FWD #(\shift)
+        orr \R3, \R3, \R4, BWD #(32 - \shift)
+        mov \R4, \R4, FWD #(\shift)
 .endm
 
 MC_put_o_16_align1:
@@ -122,11 +133,11 @@ MC_put_o_8_align0:
         ldmpc regs=r4-r5 @@ update PC with LR content.
 
 .macro  ADJ_ALIGN_DW shift, R0, R1, R2
-        mov \R0, \R0, lsr #(\shift)
-        orr \R0, \R0, \R1, lsl #(32 - \shift)
-        mov \R1, \R1, lsr #(\shift)
-        orr \R1, \R1, \R2, lsl #(32 - \shift)
-        mov \R2, \R2, lsr #(\shift)
+        mov \R0, \R0, FWD #(\shift)
+        orr \R0, \R0, \R1, BWD #(32 - \shift)
+        mov \R1, \R1, FWD #(\shift)
+        orr \R1, \R1, \R2, BWD #(32 - \shift)
+        mov \R2, \R2, FWD #(\shift)
 .endm
 
 MC_put_o_8_align1:
@@ -167,8 +178,8 @@ MC_put_o_8_align3:
 
 @ ----------------------------------------------------------------
 .macro  AVG_PW rW1, rW2
-        mov \rW2, \rW2, lsl #24
-        orr \rW2, \rW2, \rW1, lsr #8
+        mov \rW2, \rW2, BWD #24
+        orr \rW2, \rW2, \rW1, FWD #8
         eor r9, \rW1, \rW2
 #if ARM_ARCH >= 6
         uhadd8 \rW2, \rW1, \rW2
