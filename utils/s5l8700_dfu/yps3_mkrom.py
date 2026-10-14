@@ -20,9 +20,11 @@ Image format (Samsung's stage 2 bootloader, docs/YPS3-INSTALL-DESIGN.md):
 Stage 2 copies /S3.ROM from the music drive into both image copies of
 the hidden area at the next start, then deletes it. A normal start (its
 fast path) loads only the code part, ROM Size bytes plus a few sectors,
-to 0x08000000; the original firmware reads its data part (from Data
-Address) itself. So combine puts rockboot right after the code (in bytes
-the fast path never loads) and grows ROM Size over it.
+to 0x08000000. combine appends rockboot at 0x1800000 and sets ROM Size to
+Total Size, so that every start loads everything (the start animation
+takes longer). The original firmware's bytes stay untouched: with
+rockboot in the gap between its code and its data part (ROM Size grown
+over it) the original firmware hung (tested October 2026).
 """
 import hashlib, os, re, struct, sys
 
@@ -33,12 +35,11 @@ IMAGE_AREA_BYTES = 61440 * 512
 # stage 2 refuses more than 0x1E00000 (the checked and upgrade paths load
 # Total Size bytes; the fast path ROM Size/512 + 9 sectors after sector 0)
 MAX_TOTAL = 0x1E00000 - 10 * 512
-FAST_PATH_SLACK = 9 * 512           # loaded beyond ROM Size by the fast path
 
 LDR_PC = 0xE51FF004
 OF_ENTRY = 0x08001000
 LOAD_ADDR = 0x08000000
-ROCKBOOT_ALIGN = 0x1000             # rockboot right after the code
+ROCKBOOT_OFFSET = 0x1800000         # rockboot runs from 0x09800000
 
 # the image this player shipped with, as stored (with FWOK)
 KNOWN_OF = {
@@ -110,7 +111,9 @@ def check(img, kind=None):
     if total > MAX_TOTAL:
         raise ImageError("Total Size %d is over the limit %d"
                          % (total, MAX_TOTAL))
-    if not num(f, "ROMSize") < num(f, "DataAddress") < total:
+    e = entry(img)
+    if e == OF_ENTRY and \
+            not num(f, "ROMSize") < num(f, "DataAddress") < total:
         raise ImageError("ROM Size < Data Address < Total Size doesn't hold")
     cs = checksum(img, total)
     if cs != num(f, "CheckSum"):
@@ -121,7 +124,6 @@ def check(img, kind=None):
     if img[0x1FC:0x200] == b"FWOK":
         warn.append("FWOK is set at 0x1fc; files for S3.ROM should have it "
                     "cleared (extract and combine do)")
-    e = entry(img)
     if e == OF_ENTRY:
         found = "original"
     elif LOAD_ADDR + 0x200 <= e < LOAD_ADDR + total:
@@ -130,10 +132,14 @@ def check(img, kind=None):
         rb = img[off:]
         if len(rb) < 0x28 or rb[0] != 0xEA or rb[0x20:0x24] != b"CUFD":
             raise ImageError("no rockboot image at 0x%x" % off)
-        if off + 0x28 > num(f, "ROMSize"):
-            raise ImageError("rockboot at 0x%x is past ROM Size %s: a normal "
-                             "start (stage 2's fast path) doesn't load it"
-                             % (off, f["ROMSize"]))
+        if off < num(f, "DataAddress"):
+            raise ImageError("rockboot at 0x%x is inside the original "
+                             "firmware's code area: it hangs with that "
+                             "layout" % off)
+        if num(f, "ROMSize") != total:
+            raise ImageError("ROM Size %s isn't Total Size: a normal start "
+                             "(stage 2's fast path) loads only ROM Size "
+                             "bytes, not rockboot" % f["ROMSize"])
     else:
         raise ImageError("unknown entry point %08x" % e)
     if kind and kind != found:
@@ -186,25 +192,22 @@ def extract(backup):
     return stored, sha
 
 def combine(of, rockboot):
-    """rockboot goes right after the original firmware's code, into bytes a
-    normal start never loads (it loads ROM Size bytes), and ROM Size grows
-    over it. Total Size and the data part stay as they are."""
-    img = bytearray(of)
-    f, _ = check(img, "original")
+    """The original image byte for byte, 0xff up to 0x1800000, rockboot.
+    Entry -> rockboot, ROM Size = Total Size (a normal start loads
+    everything), Check Sum, FWOK cleared."""
+    of = bytearray(of)
+    check(of, "original")
+    if len(of) > ROCKBOOT_OFFSET:
+        raise ImageError("original image is larger than 0x%x"
+                         % ROCKBOOT_OFFSET)
     if len(rockboot) < 0x28 or rockboot[0] != 0xEA or \
             rockboot[0x20:0x24] != b"CUFD":
         raise ImageError("doesn't look like rockboot.ebn")
-    rb = bytes(rockboot) + b"\xff" * (-len(rockboot) % 4)
-    rom = num(f, "ROMSize")
-    off = (rom + ROCKBOOT_ALIGN - 1) & ~(ROCKBOOT_ALIGN - 1)
-    end = off + len(rb)
-    if end + FAST_PATH_SLACK > num(f, "DataAddress"):
-        raise ImageError("no room for rockboot (%d bytes) between ROM Size "
-                         "%d and Data Address %s" % (len(rb), rom,
-                                                     f["DataAddress"]))
-    img[off:end] = rb
-    img[4:8] = struct.pack(">I", LOAD_ADDR + off)
-    set_header_value(img, "ROM Size", end)
+    img = of + b"\xff" * (ROCKBOOT_OFFSET - len(of)) + rockboot
+    img += b"\xff" * (-len(img) % 4)
+    img[4:8] = struct.pack(">I", LOAD_ADDR + ROCKBOOT_OFFSET)
+    set_header_value(img, "Total Size", len(img))
+    set_header_value(img, "ROM Size", len(img))
     set_header_value(img, "Check Sum", checksum(img, len(img)))
     clear_fwok(img)
     check(img, "combined")
@@ -246,27 +249,33 @@ def selftest(backup):
                      bytes(range(256)) * 300)
     comb = combine(img, fake)
     f2, _ = check(comb, "combined")
-    off = entry(comb) - LOAD_ADDR
-    end = num(f2, "ROMSize")
-    # the original's code, its data part and Total Size are untouched
-    assert len(comb) == len(img) and f2["TotalSize"] == f["TotalSize"]
+    # the original's bytes are untouched, rockboot at 0x1800000, and a
+    # normal start loads everything
+    assert comb[0x200:len(img)] == img[0x200:]
+    assert comb[ROCKBOOT_OFFSET:ROCKBOOT_OFFSET + len(fake)] == fake
+    assert entry(comb) == LOAD_ADDR + ROCKBOOT_OFFSET
+    assert f2["ROMSize"] == f2["TotalSize"] == str(len(comb))
     assert f2["DataAddress"] == f["DataAddress"]
-    assert num(f, "ROMSize") <= off < num(f, "ROMSize") + ROCKBOOT_ALIGN
-    assert comb[0x200:off] == img[0x200:off] and comb[end:] == img[end:]
-    assert comb[off:off + len(fake)] == fake and end == off + len(fake)
-    # a normal start loads it: ROM Size covers rockboot
-    assert end + FAST_PATH_SLACK <= num(f, "DataAddress")
     assert parse_header(comb)["BuildTime"] == f["BuildTime"]
-    # the layout that only loaded on the upgrade start is refused
-    old = bytearray(img) + b"\xff" * (0x1800000 - len(img)) + fake
-    old[4:8] = struct.pack(">I", LOAD_ADDR + 0x1800000)
-    set_header_value(old, "Total Size", len(old))
-    set_header_value(old, "Check Sum", checksum(old, len(old)))
-    try:
-        check(old)
-        raise AssertionError("rockboot past ROM Size accepted")
-    except ImageError:
-        pass
+    def refused(img, what):
+        try:
+            check(img)
+        except ImageError:
+            return
+        raise AssertionError(what + " accepted")
+    # rockboot appended but ROM Size not grown: not loaded at a normal start
+    small = bytearray(comb)
+    set_header_value(small, "ROM Size", f["ROMSize"])
+    set_header_value(small, "Check Sum", checksum(small, len(small)))
+    refused(small, "rockboot past ROM Size")
+    # rockboot in the gap after the code: the original firmware hangs
+    gap = bytearray(img)
+    off = (num(f, "ROMSize") + 0xfff) & ~0xfff
+    gap[off:off + len(fake)] = fake
+    gap[4:8] = struct.pack(">I", LOAD_ADDR + off)
+    set_header_value(gap, "ROM Size", off + len(fake))
+    set_header_value(gap, "Check Sum", checksum(gap, len(gap)))
+    refused(gap, "rockboot in the code gap")
     try:
         check(comb, "original")
         raise AssertionError("combined image passed as original")
