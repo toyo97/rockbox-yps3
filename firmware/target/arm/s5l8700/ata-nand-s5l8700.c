@@ -72,7 +72,7 @@ void nand_get_info(IF_MD(int drive,) struct storage_info *info)
 {
 #ifdef SAMSUNG_YPS3
     (*info).sector_size = 512;
-    (*info).num_sectors = ftl_sector_count();
+    (*info).num_sectors = ftl_visible_sectors();
     (*info).vendor = "Samsung";
     (*info).product = "YP-S3";
 #else

@@ -35,6 +35,7 @@ uint32_t ftl_write(uint32_t sector, uint32_t count, const void* buffer);
 uint32_t ftl_sync(void);
 /* size of the logical space in 512 byte sectors */
 uint32_t ftl_sector_count(void);
+uint32_t ftl_visible_sectors(void);
 /* writes internal state with the given printf-like function */
 void ftl_debug_log(void (*logf_fn)(const char *fmt, ...));
 void ftl_ecc_selftest(void (*logf_fn)(const char *fmt, ...), int pages);

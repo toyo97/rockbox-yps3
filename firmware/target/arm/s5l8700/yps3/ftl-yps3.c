@@ -1289,6 +1289,14 @@ static uint32_t ftl_write_nand(uint32_t sector, uint32_t count,
     return 0;
 }
 
+/* the size of the disk shown to Rockbox and over USB: up to the end of
+   the music partition, so the original firmware's system partition (and
+   the hidden area after it) is out of reach of the host */
+uint32_t ftl_visible_sectors(void)
+{
+    return ftl_write_end ? ftl_write_end : ftl_sector_count();
+}
+
 /* the FAT32 partition of the MBR is the only writable area */
 static void ftl_write_setup(void)
 {
