@@ -34,15 +34,6 @@
 #define DISK_BUF_PAGE_SIZE (1 << DISK_BUF_PAGE_SHIFT)
 #define DISK_BUF_PAGE_MASK (DISK_BUF_PAGE_SIZE-1)
 
-/* Where storage reads keep the CPU busy for their whole duration (YP-S3:
- * the NAND is read by the CPU at about 2 MB/s, 16 ms for a page here), a
- * page is read in pieces so the decoders can run in between */
-#ifdef SAMSUNG_YPS3
-#define DISK_BUF_READ_SIZE (4*1024)
-#else
-#define DISK_BUF_READ_SIZE DISK_BUF_PAGE_SIZE
-#endif
-
 enum
 {
     DISK_BUF_NOTIFY_ERROR = -1,

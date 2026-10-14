@@ -220,29 +220,7 @@ static inline void disk_buf_buffer(void)
                 disk_buf.need_seek = false;
             }
 
-#if DISK_BUF_READ_SIZE < DISK_BUF_PAGE_SIZE
-            n = 0;
-            while (1)
-            {
-                ssize_t rd = rb->read(disk_buf.in_file, disk_buf.tail + n,
-                                      DISK_BUF_READ_SIZE);
-                if (rd <= 0)
-                {
-                    if (n == 0)
-                        n = rd;
-                    break;
-                }
-
-                n += rd;
-
-                if (rd < DISK_BUF_READ_SIZE || n >= DISK_BUF_PAGE_SIZE)
-                    break;
-
-                rb->yield();
-            }
-#else
             n = rb->read(disk_buf.in_file, disk_buf.tail, DISK_BUF_PAGE_SIZE);
-#endif
 
             if (n <= 0)
             {
