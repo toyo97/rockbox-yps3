@@ -65,6 +65,15 @@
 #include "rb-loader.h"
 #include "loader_strerror.h"
 
+/* The development bootloader (YPS3_NO_AUTOBOOT) is a hardware test that
+   shows everything it does; the normal one only shows the logo, "Loading
+   Rockbox..." and errors. */
+#ifdef YPS3_NO_AUTOBOOT
+#define YPS3_DEV 1
+#else
+#define YPS3_DEV 0
+#endif
+
 /* Rockbox is linked to the start of the SDRAM; the bootloader keeps its
    own buffers in the top MB */
 #define LOAD_ADDR       ((unsigned char *)SDRAM_BASE)
@@ -490,6 +499,22 @@ static void usbdump_mode(void)
     lcd_clear_display();
 }
 
+/* normal bootloader: keep an error on the screen until a key is pressed
+   (USB requests, e.g. an upload over yps3_nanddump.py, still work) */
+static void error_wait(int line)
+{
+    lcd_puts(0, line, "Press a key for the test screen");
+    lcd_update();
+    while (!(button_read_device() & BUTTON_MAIN)) {
+        if (usbdump_poll()) {
+            usbdump_mode();
+        }
+        sleep(HZ / 20);
+    }
+    while (button_read_device() & BUTTON_MAIN);
+    lcd_clear_display();
+}
+
 /* Mount the FAT partitions through the FTL and list the root directory.
    Returns true if a filesystem was mounted. */
 static bool fs_test(void)
@@ -498,14 +523,18 @@ static bool fs_test(void)
     int line = 0, rc;
     long t0 = current_tick;
 
-    lcd_clear_display();
-    lcd_puts(0, line++, "Filesystem test");
-    lcd_update();
+    if (YPS3_DEV) {
+        lcd_clear_display();
+        lcd_puts(0, line++, "Filesystem test");
+        lcd_update();
+    }
 
     rc = storage_init();
     snprintf(str, sizeof(str), "storage_init %d, %lu sectors", rc,
              (unsigned long)ftl_sector_count());
-    lcd_puts(0, line++, str);
+    if (YPS3_DEV || rc != 0) {
+        lcd_puts(0, line++, str);
+    }
     bootlog("%s", str);
     ftl_debug_log(bootlog);
 
@@ -515,9 +544,11 @@ static bool fs_test(void)
         rc = disk_mount_all();
         snprintf(str, sizeof(str), "mounted %d, %ld ms", rc,
                  (current_tick - t0) * 1000 / HZ);
-        lcd_puts(0, line++, str);
+        if (YPS3_DEV || rc <= 0) {
+            lcd_puts(0, line++, str);
+        }
         bootlog("%s", str);
-        if (rc > 0) {
+        if (YPS3_DEV && rc > 0) {
             DIR *dir = opendir("/");
             struct dirent *entry;
             while (dir && (entry = readdir(dir)) != NULL && line < 25) {
@@ -532,9 +563,15 @@ static bool fs_test(void)
             }
         }
     }
-    lcd_update();
-    sleep(3 * HZ);
-    lcd_clear_display();
+    if (YPS3_DEV) {
+        lcd_update();
+        sleep(3 * HZ);
+        lcd_clear_display();
+    }
+    else if (rc <= 0) {
+        lcd_puts(0, line++, "Can't read the music drive");
+        error_wait(line + 1);
+    }
     return rc > 0;
 }
 
@@ -870,20 +907,17 @@ static void try_boot(void)
         bootlog("key held, not booting");
         return;
     }
-    lcd_clear_display();
-    lcd_puts(0, 0, "Loading " BOOTFILE "...");
+    lcd_puts(0, 0, "Loading Rockbox...");
     lcd_update();
     rc = load_firmware(LOAD_ADDR, BOOTFILE, LOAD_MAX_SIZE);
     if (rc <= 0) {
-        snprintf(str, sizeof(str), "load: %s", loader_strerror(rc));
+        snprintf(str, sizeof(str), "%s: %s", BOOTFILE, loader_strerror(rc));
         bootlog("%s", str);
         lcd_puts(0, 1, str);
         /* installed behind the original firmware: tell how to reach it */
         lcd_puts(0, 3, "Hold power through the");
         lcd_puts(0, 4, "start: original firmware");
-        lcd_update();
-        sleep(2 * HZ);
-        lcd_clear_display();
+        error_wait(6);
         return;
     }
     bootlog("loaded %d bytes, starting", rc);
@@ -972,6 +1006,37 @@ static void nand_probe(const unsigned int *ids)
     lcd_clear_display();
 }
 
+/* tuner and codec for the hardware test screen */
+static void hw_test_init(unsigned int fm_frequency, int audiovol)
+{
+    // FM power
+    dbg_stage = 25;
+    dbg_stage = 26;
+    si4700_init();
+    dbg_stage = 27;
+    tuner_power(true);
+    si4700_set(RADIO_SLEEP, 0);
+    si4700_set(RADIO_MUTE, 0);
+    si4700_set(RADIO_REGION, 0);
+    si4700_set(RADIO_FREQUENCY, fm_frequency);
+    
+    // WM1800 codec configuration
+    dbg_stage = 28;
+    wmcodec_write(0x0F, 0);     // codec reset
+    wmcodec_write(0x19, 0xF0);  // pwr mgmt1: VMID = 1, VREF, AINL, AINR
+    wmcodec_write(0x1A, 0x60);  // pwr mgmt2: LOUT1, ROUT1
+    wmcodec_write(0x2F, 0x0C);  // pwr mgmt3: LOMIX, ROMIX
+    wmcodec_write(0x02, audiovol);              // LOUT1VOL
+    wmcodec_write(0x03, audiovol | (1 << 8));   // ROUT1VOL
+    wmcodec_write(0x22, (1 << 7) | (7 << 4));   // left out mix (1)
+    wmcodec_write(0x25, (1 << 7) | (7 << 4));   // right out mix (2)
+    
+    // enable audio
+    PCON5 = (PCON5 & ~0x0000000F) | 0x00000001;
+    dbg_stage = 29;
+    PDAT5 |= 1;
+}
+
 void main(void)
 {
     char mystring[64];
@@ -1040,45 +1105,19 @@ void main(void)
     dbg_stage = 24;
     button_init_device();
 
-    /* Blink the LED behind the middle button once for LCD type 1 and twice
-       for type 2. Only type 2 has been tested, so if the screen stays blank
-       this tells us which display driver needs work. */
-    PCON4 = (PCON4 & ~0x00000F00) | 0x00000100;   /* P4.2 output */
-    for (i = 0; i < lcd_yps3_type(); i++) {
-        PDAT4 |= (1 << 2);
-        delay(LONG_DELAY * 60);
-        PDAT4 &= ~(1 << 2);
-        delay(LONG_DELAY * 60);
+    if (YPS3_DEV) {
+        /* Blink the LED behind the middle button once for LCD type 1 and
+           twice for type 2. Only type 2 has been tested, so if the screen
+           stays blank this tells us which display driver needs work. */
+        PCON4 = (PCON4 & ~0x00000F00) | 0x00000100;   /* P4.2 output */
+        for (i = 0; i < lcd_yps3_type(); i++) {
+            PDAT4 |= (1 << 2);
+            delay(LONG_DELAY * 60);
+            PDAT4 &= ~(1 << 2);
+            delay(LONG_DELAY * 60);
+        }
+        lcd_puts(0, 0, "Rockbox YP-S3 hardware test");
     }
-        
-    // FM power
-    dbg_stage = 25;
-    dbg_stage = 26;
-    si4700_init();
-    dbg_stage = 27;
-    tuner_power(true);
-    si4700_set(RADIO_SLEEP, 0);
-    si4700_set(RADIO_MUTE, 0);
-    si4700_set(RADIO_REGION, 0);
-    si4700_set(RADIO_FREQUENCY, fm_frequency);
-    
-    lcd_puts(0, 0, "Rockbox YP-S3 hardware test");
-
-    // WM1800 codec configuration
-    dbg_stage = 28;
-    wmcodec_write(0x0F, 0);     // codec reset
-    wmcodec_write(0x19, 0xF0);  // pwr mgmt1: VMID = 1, VREF, AINL, AINR
-    wmcodec_write(0x1A, 0x60);  // pwr mgmt2: LOUT1, ROUT1
-    wmcodec_write(0x2F, 0x0C);  // pwr mgmt3: LOMIX, ROMIX
-    wmcodec_write(0x02, audiovol);              // LOUT1VOL
-    wmcodec_write(0x03, audiovol | (1 << 8));   // ROUT1VOL
-    wmcodec_write(0x22, (1 << 7) | (7 << 4));   // left out mix (1)
-    wmcodec_write(0x25, (1 << 7) | (7 << 4));   // right out mix (2)
-    
-    // enable audio
-    PCON5 = (PCON5 & ~0x0000000F) | 0x00000001;
-    dbg_stage = 29;
-    PDAT5 |= 1;
 
     dbg_stage = 30;
     nand_ll_init();
@@ -1090,21 +1129,31 @@ void main(void)
     usbdump_init(nand_ids);
 
     dbg_stage = 31;
-    lcd_puts(0, 1, "SDRAM init + test...");
-    lcd_update();
-    dbg_stage = 31;
     sdram_init();
-    clock_measure("clocks");
-    sdram_mb = sdram_test();
+    if (YPS3_DEV) {
+        lcd_puts(0, 1, "SDRAM test...");
+        lcd_update();
+        clock_measure("clocks");
+        sdram_mb = sdram_test();
+        bootlog("sdram %d MB", sdram_mb);
+    }
+    else {
+        sdram_mb = 0;           /* not tested */
+    }
     usbdump_sdram_mb = sdram_mb;
-    bootlog("sdram %d MB", sdram_mb);
 
     dbg_stage = 32;
     if (fs_test()) {
-        file_crc_test();
+        if (YPS3_DEV) {
+            file_crc_test();
+        }
         dbg_stage = 33;
         try_boot();
     }
+
+    /* the hardware test screen: the development bootloader, or a start
+       that failed */
+    hw_test_init(fm_frequency, audiovol);
 
     /* get rid of the logo and of start-up messages */
     lcd_clear_display();
