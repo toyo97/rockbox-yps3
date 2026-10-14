@@ -106,10 +106,10 @@ your WPS (While Playing Screen).
           \opt{HAVEREMOTEKEYMAP}{& \ActionRCWpsIdThreeScreen}
           & Enter \setting{ID3 Viewer}.\\%
       }%
-      \opt{hotkey}{%
+      \opt{hotkey}{\nopt{SAMSUNG_YPS3_PAD}{%
         \ActionWpsHotkey \opt{HAVEREMOTEKEYMAP}{& }
         & Activate the \setting{Hotkey} function (see \reference{ref:Hotkeys}).\\
-      }
+      }}
       \opt{ab_repeat_buttons}{%
          \ActionWpsAbSetBNextDir{} or }%
          % not all targets have the above action defined but the one below works on all
@@ -248,7 +248,8 @@ from the WPS, %
   press \ActionWpsIdThreeScreen. }%
 \opt{IPOD_4G_PAD,IPOD_3G_PAD,IAUDIO_X5_PAD,IAUDIO_M3_PAD,FIIO_M3K_PAD,%
       GIGABEAT_PAD,GIGABEAT_S_PAD,MROBE100_PAD,SANSA_CLIP_PAD,PBELL_VIBE500_PAD,%
-      MPIO_HD200_PAD,MPIO_HD300_PAD,SAMSUNG_YH92X_PAD,SAMSUNG_YH820_PAD,XDUOO_X3_PAD}%
+      MPIO_HD200_PAD,MPIO_HD300_PAD,SAMSUNG_YH92X_PAD,SAMSUNG_YH820_PAD,XDUOO_X3_PAD,%
+      SAMSUNG_YPS3_PAD}%
       {press \ActionWpsContext{} to access the
       \setting{Context Menu}. Then select \setting{Show Track Info}. The same steps
       work in the Playlist Viewer as well.}
@@ -291,9 +292,11 @@ Reveal the currently playing track in the \setting{File Browser}.
   and will be restored upon playing back those bookmarks.
 
   \begin{btnmap}
+    \nopt{SAMSUNG_YPS3_PAD}{%
     \ActionPsToggleMode
     \opt{HAVEREMOTEKEYMAP}{& \ActionRCPsToggleMode}
     & Toggle pitch changing mode (cycle through all available modes).\\
+    }%
     %
     \ActionPsIncSmall{} / \ActionPsDecSmall
     \opt{HAVEREMOTEKEYMAP}{& \ActionRCPsIncSmall{} / \ActionRCPsDecSmall}
