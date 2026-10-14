@@ -60,6 +60,16 @@ _newstart:
        on: clean the data cache and switch them off before we copy
        ourselves to IRAM and jump there. */
     msr     cpsr_c, #0xd3       /* supervisor mode, IRQ/FIQ off */
+    /* On battery the player only stays on while P0.1 is driven high
+       (power_init does it later); make sure it is, latch first */
+    ldr     r1, =0x3CF00000     /* GPIO base */
+    ldr     r0, [r1, #4]        /* PDAT0 */
+    orr     r0, r0, #0x2
+    str     r0, [r1, #4]
+    ldr     r0, [r1]            /* PCON0: 2 bits per pin */
+    bic     r0, r0, #0xC
+    orr     r0, r0, #0x4        /* P0.1 output */
+    str     r0, [r1]
     mov     r1, #0
 1:
     mov     r0, #0
@@ -100,8 +110,8 @@ _newstart:
     ldr     r0, [r1, #0x44]     /* PDAT4 */
     orr     r0, r0, #0x4
     str     r0, [r1, #0x44]
-    ldr     r0, [r1]            /* PCON0 */
-    bic     r0, r0, #0xF
+    ldr     r0, [r1]            /* PCON0: 2 bits per pin, keep P0.1 (power) */
+    bic     r0, r0, #0x3
     orr     r0, r0, #0x1        /* P0.0 output */
     str     r0, [r1]
     ldr     r0, [r1, #4]        /* PDAT0 */

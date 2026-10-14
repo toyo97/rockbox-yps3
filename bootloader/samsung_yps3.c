@@ -993,9 +993,11 @@ void main(void)
     INTMSK = 0;
     
     // start with all GPIOs as input
-    /* but keep P0.0 (backlight) and P0.1 (stay powered) as outputs, high */
-    PCON0 = 0x5;
+    /* but keep P0.0 (backlight) and P0.1 (stay powered) as outputs, high;
+       the level first, so that P0.1 never drives low (on battery that
+       switches the player off) */
     PDAT0 |= 0x3;
+    PCON0 = 0x5;
     PCON1 = 0;
     PCON2 = 0;
     PCON3 = 0;
