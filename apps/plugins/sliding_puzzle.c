@@ -108,7 +108,7 @@
 #define PUZZLE_PICTURE BUTTON_PLAY
 
 #elif (CONFIG_KEYPAD == GIGABEAT_S_PAD) || \
-      (CONFIG_KEYPAD == SAMSUNG_YPR0_PAD)
+      ((CONFIG_KEYPAD == SAMSUNG_YPR0_PAD || CONFIG_KEYPAD == SAMSUNG_YPS3_PAD))
 #define PUZZLE_QUIT BUTTON_BACK
 #define PUZZLE_LEFT BUTTON_LEFT
 #define PUZZLE_RIGHT BUTTON_RIGHT
@@ -900,7 +900,7 @@ enum plugin_status plugin_start(
         rb->lcd_putsxy(0, 28, "[REW] shuffle");
         rb->lcd_putsxy(0, 38, "[PLAY] change pic");
 #elif CONFIG_KEYPAD == GIGABEAT_S_PAD || \
-      CONFIG_KEYPAD == SAMSUNG_YPR0_PAD
+      (CONFIG_KEYPAD == SAMSUNG_YPR0_PAD || CONFIG_KEYPAD == SAMSUNG_YPS3_PAD)
         rb->lcd_putsxy(0, 18, "[BACK] to stop");
         rb->lcd_putsxy(0, 28, "[SELECT] shuffle");
         rb->lcd_putsxy(0, 38, "[MENU] change pic");

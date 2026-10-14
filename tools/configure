@@ -3269,7 +3269,7 @@ fi
     bmp2rb_native="$rootdir/tools/bmp2rb -f 4"
     output="rockbox.yps3"
     appextra="recorder:gui:radio"
-    plugins="no" #FIXME
+    plugins="yes"
     toolset=$scramblebitmaptools
     tool="$rootdir/tools/scramble -add=yps3"
     boottool="cp"

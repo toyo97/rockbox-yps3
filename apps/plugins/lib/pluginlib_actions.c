@@ -102,7 +102,7 @@ const struct button_mapping pla_main_ctx[] =
     || (CONFIG_KEYPAD == SAMSUNG_YH92X_PAD) \
     || (CONFIG_KEYPAD == SANSA_FUZEPLUS_PAD) \
     || (CONFIG_KEYPAD == SANSA_CONNECT_PAD) \
-    || (CONFIG_KEYPAD == SAMSUNG_YPR0_PAD) \
+    || ((CONFIG_KEYPAD == SAMSUNG_YPR0_PAD || CONFIG_KEYPAD == SAMSUNG_YPS3_PAD)) \
     || (CONFIG_KEYPAD == CREATIVE_ZENXFI3_PAD) \
     || (CONFIG_KEYPAD == HM60X_PAD) \
     || (CONFIG_KEYPAD == HM801_PAD) \
@@ -365,7 +365,7 @@ const struct button_mapping pla_main_ctx[] =
     {PLA_SELECT_REL,        BUTTON_SELECT|BUTTON_REL,           BUTTON_SELECT},
     {PLA_SELECT_REPEAT,     BUTTON_SELECT|BUTTON_REPEAT,        BUTTON_NONE},
 #elif  (CONFIG_KEYPAD == GIGABEAT_S_PAD) \
-    || (CONFIG_KEYPAD == SAMSUNG_YPR0_PAD)
+    || ((CONFIG_KEYPAD == SAMSUNG_YPR0_PAD || CONFIG_KEYPAD == SAMSUNG_YPS3_PAD))
     {PLA_CANCEL,            BUTTON_BACK,                        BUTTON_NONE},
     {PLA_EXIT,              BUTTON_MENU,                        BUTTON_NONE},
     {PLA_SELECT,            BUTTON_SELECT,                      BUTTON_NONE},

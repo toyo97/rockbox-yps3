@@ -73,6 +73,11 @@ int plugin_open(const char *plugin, const char *parameter);
 #include "kernel.h"
 #include "thread.h"
 #include "button.h"
+#if CONFIG_KEYPAD == SAMSUNG_YPS3_PAD && !defined(BUTTON_USER)
+/* the plugins share the YP-R0 keymaps; the YP-S3 has no USER key, POWER
+   takes its place */
+#define BUTTON_USER BUTTON_POWER
+#endif
 #include "action.h"
 #include "gesture.h"
 #include "load_code.h"

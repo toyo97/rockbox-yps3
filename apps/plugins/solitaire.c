@@ -497,7 +497,7 @@ CONFIG_KEYPAD == MROBE500_PAD
 #   define HK_CUR2STACK      "NEXT"
 #   define HK_REM2STACK      "PREV"
 
-#elif (CONFIG_KEYPAD == SAMSUNG_YPR0_PAD)
+#elif ((CONFIG_KEYPAD == SAMSUNG_YPR0_PAD || CONFIG_KEYPAD == SAMSUNG_YPS3_PAD))
 #   define SOL_QUIT         BUTTON_BACK
 #   define SOL_UP           BUTTON_UP
 #   define SOL_DOWN         BUTTON_DOWN
