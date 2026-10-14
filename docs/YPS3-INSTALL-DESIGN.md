@@ -153,17 +153,17 @@ Combined image layout (`Total Size` at most about 30 MiB):
 
 ```
 0x0000000  OF header, unchanged except:
-             word at 0x004 -> chain stub address (was 0x08001000)
+             word at 0x004 -> 0x09800000, rockboot (was 0x08001000)
              Total Size / Check Sum -> new values
 0x0000200  OF image bytes 0x200 .. 25160329, byte for byte
-0x1800000  chain stub + rockboot (about 100 KB), 4-byte aligned
+0x1800000  rockboot.ebn as built (about 100 KB), 4-byte aligned
 ```
 
 The OF stays where it expects to be (entry 0x08001000, data at 10 MiB), so
 nothing in the OF is relocated or patched. Stage 2 loads the whole image
 and jumps to 0x08000000, then the `ldr pc` goes to the stub.
 
-**Chain stub** (a few instructions at the start of the appended part; it
+**Chain stub** (the first instructions of `_newstart` in rockboot's crt0; it
 clobbers only `ip` and the flags):
 
 ```
