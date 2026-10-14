@@ -183,6 +183,24 @@ bool dbg_hw_info(void)
                       charging_state() ? "yes" : "no");
         _DEBUG_PRINTF("CPU: %ld MHz", cpu_frequency / 1000000);
         {
+            /* time of a full LCD update, measured once (20 frames) */
+            static long lcd_ms = -1;
+            extern long ftl_stat_tmax[3];
+            extern unsigned long ftl_stat_slow;
+            if (lcd_ms < 0) {
+                long t = current_tick;
+                for (i = 0; i < 20; i++) {
+                    lcd_update();
+                }
+                lcd_ms = (current_tick - t) * 1000 / HZ / 20;
+            }
+            _DEBUG_PRINTF("LCD %ld ms/frame", lcd_ms);
+            _DEBUG_PRINTF("FTL max ms r %ld w %ld s %ld slow %lu",
+                          ftl_stat_tmax[0] * 1000 / HZ,
+                          ftl_stat_tmax[1] * 1000 / HZ,
+                          ftl_stat_tmax[2] * 1000 / HZ, ftl_stat_slow);
+        }
+        {
             extern unsigned long tkey_words, tkey_bad, tkey_multi;
             extern int tkey_hist[8];
             _DEBUG_PRINTF("tkey n %lu bad %lu multi %lu btn %03x", tkey_words,
