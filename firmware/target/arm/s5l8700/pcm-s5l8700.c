@@ -368,12 +368,43 @@ struct pcm_sink builtin_pcm_sink = {
     each chunk is started from the completion interrupt (YP-S3 only). */
 static void *rec_buf;
 static size_t rec_size;
+static void *rec_chunk;
+static size_t rec_chunk_n;
+
+#ifdef SAMSUNG_YPS3
+/* for the debug screen: what the receiver delivered last */
+unsigned long rec_dbg_chunks, rec_dbg_nonzero;
+unsigned int rec_dbg_status;
+short rec_dbg_min, rec_dbg_max, rec_dbg_first[4];
+
+static void rec_dbg_chunk(const short *p, int n)
+{
+    int i;
+    short lo = 32767, hi = -32768;
+    unsigned long nz = 0;
+    n = MIN(n, 256);
+    for (i = 0; i < n; i++) {
+        lo = MIN(lo, p[i]);
+        hi = MAX(hi, p[i]);
+        nz += p[i] != 0;
+    }
+    for (i = 0; i < 4 && i < n; i++)
+        rec_dbg_first[i] = p[i];
+    rec_dbg_min = lo;
+    rec_dbg_max = hi;
+    rec_dbg_nonzero = nz;
+    rec_dbg_status = I2SSTATUS;
+    rec_dbg_chunks++;
+}
+#endif
 
 static void rec_start_chunk(void)
 {
     size_t n = MIN(rec_size, DMA_CHUNK_MAX);
     /* no dirty lines of the buffer may be written back over the data */
     commit_discard_dcache();
+    rec_chunk = rec_buf;
+    rec_chunk_n = n;
     DMABASE2 = (unsigned int)rec_buf;
     DMATCNT2 = n / 2 - 1;
     rec_buf += n;
@@ -386,6 +417,9 @@ static void rec_dma_done(void)
 {
     DMACOM2 = 7;            /* clear the completion interrupt */
     commit_discard_dcache();    /* the CPU must see the new data */
+#ifdef SAMSUNG_YPS3
+    rec_dbg_chunk(rec_chunk, rec_chunk_n / 2);
+#endif
     if (!rec_size) {
         if (!pcm_rec_dma_complete_callback(PCM_DMAST_OK, &rec_buf, &rec_size))
             return;

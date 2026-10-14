@@ -200,6 +200,20 @@ bool dbg_hw_info(void)
                           ftl_stat_tmax[1] * 1000 / HZ,
                           ftl_stat_tmax[2] * 1000 / HZ, ftl_stat_slow);
         }
+#ifdef HAVE_RECORDING
+        {
+            extern unsigned long rec_dbg_chunks, rec_dbg_nonzero;
+            extern unsigned int rec_dbg_status;
+            extern short rec_dbg_min, rec_dbg_max, rec_dbg_first[4];
+            _DEBUG_PRINTF("rec n %lu nz %lu/256 st %x", rec_dbg_chunks,
+                          rec_dbg_nonzero, rec_dbg_status);
+            _DEBUG_PRINTF("rec %d..%d %04x %04x %04x %04x", rec_dbg_min,
+                          rec_dbg_max, (unsigned short)rec_dbg_first[0],
+                          (unsigned short)rec_dbg_first[1],
+                          (unsigned short)rec_dbg_first[2],
+                          (unsigned short)rec_dbg_first[3]);
+        }
+#endif
         {
             extern unsigned long tkey_words, tkey_bad, tkey_multi;
             extern int tkey_hist[8];
