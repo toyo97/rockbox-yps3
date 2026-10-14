@@ -10,9 +10,10 @@
 #   gio mount -l; MTP_FOLDER is the folder that holds Music, like
 #   mtp://SAMSUNG_YP-S3_xxxx/Internal/ (needs gio; not yet verified on the
 #   player that its bootloader sees a file copied this way).
-# S3-original.ROM: made once with
-#   yps3_mkrom.py extract nanddump/backup/hidden_area_ecc.img S3-original.ROM
-# or an official Samsung S3.ROM. Default: S3-original.ROM next to this script.
+# S3-original.ROM: default nanddump/install/S3-original.ROM, made with
+#   yps3_mkrom.py extract nanddump/backup/hidden_area_ecc.img \
+#       nanddump/install/S3-original.ROM
+# or an official Samsung S3.ROM. See "For the owner" in YPS3-PORT.md.
 # Only copies a checked file to the player; the player's bootloader writes
 # it at the next start.
 set -e
@@ -28,7 +29,7 @@ while [ $# -gt 0 ]; do
 done
 [ $# -eq 1 ] || [ $# -eq 2 ] ||
     die "usage: $0 [--force] [--mtp] MUSIC_DRIVE|MTP_FOLDER [S3-original.ROM]"
-target=$1 image=${2:-$HERE/S3-original.ROM}
+target=$1 image=${2:-$INSTALL_DIR/S3-original.ROM}
 [ -f "$image" ] || die "$image not found (see the top of $0)"
 
 $MKROM verify --original "$image" ||

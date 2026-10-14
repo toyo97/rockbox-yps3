@@ -1,6 +1,8 @@
 # Samsung YP-S3: permanent install and restore, design note
 
-Status: design only. Nothing here has been run on a player. The goal is a
+Status: implemented (chain mode in `crt0.S`, tools in `utils/s5l8700_dfu`);
+the combined image has run from SDRAM over DFU, nothing has been written
+to the firmware area yet. The goal is a
 Rockbox install that starts without the USB cable, and a restore to the
 original firmware (OF) that the owner can run alone with one documented
 script.
@@ -178,9 +180,9 @@ clobbers only `ip` and the flags):
   needs one GPIO read, no I2C, no touch keys, and it leaves every register
   and memory byte the OF might rely on as stage 2 left them. **[L] PCON4
   is still an input after stage 2, and stage 2 ignores the hold switch at
-  power-up.** The power-up test in 4.1 checks both. A touch-key choice
-  would need rockboot's I2C driver and would dirty the state before the
-  OF starts.
+  power-up.** The checks after the no-op upgrade (section 4) cover both.
+  A touch-key choice would need rockboot's I2C driver and would dirty the
+  state before the OF starts.
 * **rockboot in chain mode** (implemented in `crt0.S`, commit "chain mode
   behind the original firmware"). The normal `rockboot.ebn` is used as is,
   with no separate build:
@@ -222,110 +224,61 @@ past N keep stale data, as they do today.
 
 ## 4. Procedures
 
-### 4.1 Before anything else: a no-op upgrade (validates restore)
+The owner's procedures (preparing the images, the no-op upgrade, install,
+going back, DFU rescue, broken music drive) are in `YPS3-PORT.md`, "For
+the owner". The tools: `utils/s5l8700_dfu/yps3_mkrom.py` (`info`,
+`extract`, `combine`, `verify`, `copy`, `selftest`),
+`yps3-install.sh` and `yps3-restore.sh` (also `--mtp`). Image files
+live in `nanddump/install/` (not tracked by git).
 
-The safest first write puts **the original image** back through the upgrade
-path. The outcome is the same as before, and it proves the parts this
-design depends on: `/a/` is the music drive, the file name, the upgrade
-check runs, and a restore works.
+What the tools do that matters here:
+* `extract` takes area 1 from `hidden_area_ecc.img` (never
+  `hidden_area.img`: 506 sectors with uncorrected bit errors, it fails the
+  checksum) and checks header, size and checksum. As stored, with `FWOK`:
+  sha256 `37d8edeb978d507280c172e8f227fca8fa7b3442d6401a1d805996a6e3562dcd`,
+  25160329 bytes.
+* Every `S3.ROM` they write has **0x1FC-0x1FF cleared**. The checksum
+  doesn't cover them, and without `FWOK` a copy that a power loss left
+  half-written is refused at boot instead of being started (stage 2 stamps
+  `FWOK` only after both copies are written).
+* A restore writes only areas 1/4 (N sectors) and deletes the file. Bytes
+  past N stay as they are; stage 2 and the OF never read them.
 
-1. `yps3_mkrom.py extract nanddump/backup/hidden_area_ecc.img S3.ROM`
-   (tool to write, host only): take area 1 from the backup, check the
-   header, size and checksum. Expect
-   `sha256 37d8edeb978d507280c172e8f227fca8fa7b3442d6401a1d805996a6e3562dcd`,
-   25160329 bytes (as stored, with `FWOK`). The tool then **clears
-   0x1FC-0x1FF** in the file. The checksum doesn't cover them, and without
-   `FWOK` a copy that a power loss left half-written is refused at boot
-   instead of being started (stage 2 stamps `FWOK` only after both copies
-   are written).
-   **Use `hidden_area_ecc.img`, never `hidden_area.img`**: the plain image
-   has 506 sectors with uncorrected bit errors and fails the checksum.
-2. Copy `S3.ROM` to the root of the music drive (Rockbox USB drive, or MTP
-   in the OF), eject, power off, power on.
-3. Expect the upgrade screens, then the OF. `S3.ROM` must be gone. If it
-   is still there, the upgrade check didn't run: read area 0 (read only,
-   development bootloader) and check config word 2 before going further.
-4. Read areas 1 and 4 with the development bootloader (read only) and
-   compare them with the backup up to N sectors.
-5. Same session, also read only: check the hold switch's state through the
-   development bootloader, and note whether the OF starts normally with
-   hold on.
-
-### 4.2 Install
-
-1. `yps3_mkrom.py combine S3-original.ROM rockboot.ebn S3-combined.ROM`
-   (fixes the
-   entry literal, `Total Size` and `Check Sum`, refuses sizes over the
-   limit, checks the result by parsing it back).
-2. Test the combined image over DFU first: development bootloader,
-   `yps3_nanddump.py load --addr 0x08000000 --no-reset S3-combined.ROM`
-   (jumps to 0x08000000, then the `ldr pc` goes to 0x09800000, so the
-   chain path runs). **[L] the upload size limit of the development
-   bootloader (25 MB).** This is not the exact stage 2 hand-over state, but it
-   catches layout and stub bugs. Try with hold on and off.
-3. `yps3-install.sh MUSIC_DRIVE S3-combined.ROM rockbox.zip`, then eject
-   and restart. Stage 2 installs it.
-4. Check: hold off starts Rockbox, hold on starts the OF. Read areas 1/4
-   back and compare with `S3.ROM`.
-
-### 4.3 Restore (the owner's script)
-
-`utils/s5l8700_dfu/yps3-restore.sh MOUNTPOINT [IMAGE]`, which only needs
-Python 3 and the mounted music drive:
-
-1. Without `IMAGE`, use `S3-original.ROM` next to the script. With an
-   official Samsung `S3.ROM`, use that instead.
-2. Check: `Total Size` equals the file size, `Check Sum` matches, the entry
-   literal is 0x08001000 (refuse a combined image), and the sha256 if it is
-   the known original. Clear 0x1FC-0x1FF in the copy (see 4.1.1).
-3. Copy it to `MOUNTPOINT/S3.ROM`, `sync`, and print: "eject, power off,
-   power on; the player shows the upgrade and starts the original
-   firmware. Delete `/.rockbox` afterwards if you like."
-
-Get the drive mounted:
-* normally through Rockbox's USB mode (hold off) or the OF's MTP (hold on);
-* if neither starts: DFU mode (pin in the reset hole + power), then
-  `s5l8700_dfu.py run rockboot.ebn` and
-  `yps3_nanddump.py load --addr 0x08000000 rockbox.yps3`, connect USB in
-  Rockbox, and run the script. Stage 2 runs the upgrade check **before**
-  it starts any image, so a broken image in areas 1/4 can't stop the
-  restore. A wrapper `yps3-rescue.sh` should do these steps.
-
-The restore writes only areas 1/4 (N sectors) and deletes the file.
-Bytes past N in the hidden area stay as they are; stage 2 and the OF
-never read them.
-
-Keep `S3-original.ROM` (and the backup directory) in at least two places
-outside the repository.
+Developer checks, read only, with the development bootloader:
+* after the no-op upgrade: area 0 config word 2 if `S3.ROM` stayed; areas
+  1 and 4 compared with the backup up to N sectors; the hold switch state;
+* before the install, the combined image over DFU:
+  `yps3_nanddump.py load --addr 0x08000000 --no-reset S3-combined.ROM`
+  (jumps to 0x08000000, the `ldr pc` goes to 0x09800000, so the chain path
+  runs). **Done (October 2026): with hold off it chained into rockboot and
+  Rockbox started normally. Hold on not tested yet.** This is not stage 2's
+  hand-over state (caches, MIUCON);
+* after the install: hold off starts Rockbox, hold on the OF; areas 1/4
+  read back and compared with `S3-combined.ROM`.
 
 ## 5. Risks
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| Chain stub or rockboot crashes after install | player doesn't start (hold off), OF still starts with hold on if the stub works | restore via DFU + Rockbox USB (4.3); test over DFU first (4.2.2) |
-| Stub broken, both paths dead | no start at all | stage 2 still runs the upgrade check first: restore via DFU (4.3) |
-| Stage 2 doesn't pick up `S3.ROM` (config word 2, file name, volume) | nothing happens | found by the no-op upgrade (4.1) before any change; fallback is option B |
+| Chain stub or rockboot crashes after install | player doesn't start (hold off), OF still starts with hold on if the stub works | restore via DFU + Rockbox USB; test over DFU first (section 4) |
+| Stub broken, both paths dead | no start at all | stage 2 still runs the upgrade check first: restore via DFU |
+| Stage 2 doesn't pick up `S3.ROM` (config word 2, file name, volume) | nothing happens | found by the no-op upgrade before any change; fallback is option B |
 | Music FAT damaged by Rockbox's writer | stage 2 reformats both partitions at the next start (data lost, player still starts) | existing FTL write tests; back up music |
-| Power loss during the upgrade | copy A or B partly written | `S3.ROM` files are made with 0x1FC cleared, so a half-written copy has no `FWOK` (step 2 overwrites the old sector 0 first) and boot stops in stage 2's USB Mode instead of jumping into it. Then copy the file again (4.3). **[L] whether the file is still there after a power loss** (it is deleted only at the end) |
+| Power loss during the upgrade | copy A or B partly written | `S3.ROM` files are made with 0x1FC cleared, so a half-written copy has no `FWOK` (step 2 overwrites the old sector 0 first) and boot stops in stage 2's USB Mode instead of jumping into it. Then copy the file again. **[L] whether the file is still there after a power loss** (it is deleted only at the end) |
 | OF reacts to the changed header or the extra bytes | OF misbehaves with hold on | **[L]**; restore removes it |
-| Hold switch input not as expected after stage 2 | wrong choice at start-up | checked in 4.1.5; the stub can configure PCON4 itself |
+| Hold switch input not as expected after stage 2 | wrong choice at start-up | checked after the no-op upgrade; the stub can configure PCON4 itself |
 
-## 6. Tooling to write
+## 6. Tooling still missing
 
 | Tool | Device access | Purpose |
 |---|---|---|
-| `utils/s5l8700_dfu/yps3_mkrom.py` | none | `info`, `extract` (from the ECC backup), `combine`, `verify` |
-| `utils/s5l8700_dfu/yps3-restore.sh` | none (writes one file to a mounted drive) | the owner's restore (4.3) |
-| `utils/s5l8700_dfu/yps3-rescue.sh` | DFU + USB load, read only on the NAND | brings up Rockbox over DFU so the drive can be mounted |
 | `yps3_nanddump.py hidden` (new subcommand) | read only | dump area 0, compare areas 1/4 with a file |
-| rockboot chain mode + stub | n/a | 2.C |
-| `YPS3-PORT.md` / manual page | n/a | the install and restore procedure for users |
 
 ## 7. Open questions
 
-1. Is config word 2 (area 0) always 1, or does the OF clear it? (4.1.3)
+1. Is config word 2 (area 0) always 1, or does the OF clear it? (no-op upgrade)
 2. Is `/a/` the music partition? Which of `S3.ROM` / `S3J.ROM` is tried
-   first? (decompiled lengths 11/12 bytes) (4.1)
+   first? (decompiled lengths 11/12 bytes) (no-op upgrade)
 3. Fast path or checked path at boot: the 0x1F0/0x1F1 offsets in
    `09e0179c`. Disassemble `09e0179c` to confirm.
 4. Cache/MPU state at the jump (`09e3517c`), and which rockboot init steps

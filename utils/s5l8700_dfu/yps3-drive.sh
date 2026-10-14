@@ -2,6 +2,8 @@
 # the YP-S3's music drive and copies an S3.ROM image to it. Linux, bash.
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+TOP=$(cd "$HERE/../.." && pwd)          # the repository
+INSTALL_DIR=$TOP/nanddump/install       # images (not tracked by git)
 MKROM="python3 $HERE/yps3_mkrom.py"
 
 die() {
@@ -46,7 +48,7 @@ copy_image() {
 # Through gio (GNOME's MTP support), to a player running the original
 # firmware. Not yet verified that the bootloader sees files copied this way.
 copy_image_mtp() {
-    local kind=$1 image=$2 dir=${3%/} force=$4 tmp list size
+    local kind=$1 image=$2 dir=${3%/} force=$4 list size
     command -v gio > /dev/null || die "gio is needed for --mtp (package gvfs)"
     list=$(gio list "$dir") || die "can't list $dir (see: gio mount -l)"
     if ! grep -qix music <<< "$list"; then
@@ -57,13 +59,16 @@ copy_image_mtp() {
     ! grep -qix s3j.rom <<< "$list" ||
         die "$dir/S3J.ROM exists: the bootloader might use it instead," \
             "delete it first"
-    tmp=$(mktemp -d)
-    trap 'rm -rf "$tmp"' EXIT
-    $MKROM copy "--$kind" "$image" "$tmp/S3.ROM" || die "S3.ROM not prepared"
-    gio copy "$tmp/S3.ROM" "$dir/S3.ROM" || die "copy to $dir failed"
+    mkdir -p "$INSTALL_DIR"
+    # global: the trap runs after this function has returned
+    mtp_tmp=$(mktemp -d "$INSTALL_DIR/mtp.XXXXXX")
+    trap 'rm -rf "$mtp_tmp"' EXIT
+    $MKROM copy "--$kind" "$image" "$mtp_tmp/S3.ROM" ||
+        die "S3.ROM not prepared"
+    gio copy "$mtp_tmp/S3.ROM" "$dir/S3.ROM" || die "copy to $dir failed"
     size=$(gio info -a standard::size "$dir/S3.ROM" |
            awk '/standard::size:/ { print $2 }')
-    [ "$size" = "$(stat -c %s "$tmp/S3.ROM")" ] ||
+    [ "$size" = "$(stat -c %s "$mtp_tmp/S3.ROM")" ] ||
         die "$dir/S3.ROM has $size bytes, the copy is incomplete"
     echo "$dir/S3.ROM copied, $size bytes"
 }
