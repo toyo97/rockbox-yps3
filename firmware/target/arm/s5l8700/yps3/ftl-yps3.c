@@ -72,7 +72,11 @@ static struct mutex ftl_mtx;
 #define FTL_UNLOCK() mutex_unlock(&ftl_mtx)
 #define FTL_NOW()    current_tick
 #define FTL_SLOW     (HZ / 2)
+/* The NAND is read by the CPU, a page at a time with busy waits: let the
+   other threads (codec, PCM refill, UI) run between pages of a long read */
+#define FTL_YIELD()  yield()
 #else
+#define FTL_YIELD()
 #define FTL_LOCK()
 #define FTL_UNLOCK()
 #define FTL_NOW()    0
@@ -747,6 +751,9 @@ static uint32_t ftl_read_nand(uint32_t sector, uint32_t count, void *buffer)
         dst += n * SECTOR_SIZE;
         sector += n;
         count -= n;
+        if (count) {
+            FTL_YIELD();
+        }
     }
     return 0;
 }
