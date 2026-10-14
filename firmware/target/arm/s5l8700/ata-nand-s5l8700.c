@@ -94,7 +94,12 @@ long nand_last_disk_activity(void)
 int nand_flush(void)
 {
     int rc = ftl_sync();
+#ifndef SAMSUNG_YPS3
+    /* the YP-S3 FTL stops writing after a NAND error until the next start
+       and shows it on the debug screen; don't keep the player from
+       powering off for that */
     if (rc != 0) panicf("Failed to unmount flash: %X", rc);
+#endif
     return rc;
 }
 #endif

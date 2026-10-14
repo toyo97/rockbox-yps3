@@ -53,6 +53,10 @@
 
 #define CONFIG_NAND NAND_SAMSUNG
 
+/* the FTL keeps a few written pages in RAM (ftl-yps3.c); storage_flush()
+   writes them at shutdown, reboot, ROLO and USB disconnect */
+#define HAVE_STORAGE_FLUSH
+
 /* LCD dimensions */
 #define LCD_WIDTH  176
 #define LCD_HEIGHT 220
