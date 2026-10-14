@@ -42,14 +42,43 @@ copy_image() {
     sync
 }
 
+# copy_image_mtp original|combined IMAGE MTP_FOLDER [--force]
+# Through gio (GNOME's MTP support), to a player running the original
+# firmware. Not yet verified that the bootloader sees files copied this way.
+copy_image_mtp() {
+    local kind=$1 image=$2 dir=${3%/} force=$4 tmp list size
+    command -v gio > /dev/null || die "gio is needed for --mtp (package gvfs)"
+    list=$(gio list "$dir") || die "can't list $dir (see: gio mount -l)"
+    if ! grep -qix music <<< "$list"; then
+        [ "$force" = --force ] ||
+            die "$dir has no Music folder; if it really is the player's" \
+                "storage, run again with --force"
+    fi
+    ! grep -qix s3j.rom <<< "$list" ||
+        die "$dir/S3J.ROM exists: the bootloader might use it instead," \
+            "delete it first"
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    $MKROM copy "--$kind" "$image" "$tmp/S3.ROM" || die "S3.ROM not prepared"
+    gio copy "$tmp/S3.ROM" "$dir/S3.ROM" || die "copy to $dir failed"
+    size=$(gio info -a standard::size "$dir/S3.ROM" |
+           awk '/standard::size:/ { print $2 }')
+    [ "$size" = "$(stat -c %s "$tmp/S3.ROM")" ] ||
+        die "$dir/S3.ROM has $size bytes, the copy is incomplete"
+    echo "$dir/S3.ROM copied, $size bytes"
+}
+
 next_steps() {
     cat <<EOF
 
 Next:
-  1. Eject the drive (file manager, or: udisksctl unmount -b /dev/sdX1).
-  2. Unplug the USB cable and switch the player off (hold the power slider).
-  3. Switch it on. The bootloader finds S3.ROM, writes it (this takes a
-     while, don't switch off) and starts the new firmware. S3.ROM is then
-     deleted from the drive.
+  1. Eject the drive (file manager, or: udisksctl unmount -b /dev/sdX1;
+     for MTP: gio mount -u on the player's mtp:// address).
+  2. Unplug the USB cable and switch the player off (hold the power slider
+     until the screen goes dark).
+  3. Switch it on, with the cable unplugged and a charged battery. The
+     bootloader finds S3.ROM, writes it (don't switch off meanwhile) and
+     starts the new firmware. S3.ROM is then deleted from the drive: that
+     is how you know it worked.
 EOF
 }

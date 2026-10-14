@@ -321,60 +321,39 @@ make -j$(nproc) && make zip   # -> rockbox.yps3, rockbox.zip (.rockbox)
 ## Installing Rockbox permanently, and going back
 
 **Not tested on a player yet.** Design and open questions:
-`docs/YPS3-INSTALL-DESIGN.md`.
+`docs/YPS3-INSTALL-DESIGN.md`. The user guide is
+`utils/s5l8700_dfu/yps3-kit-README.txt`, shipped as `README.txt` in the
+rescue kit.
 
 The player's own bootloader can update the firmware: at start-up it looks
 for `S3.ROM` on the music drive, writes it into the firmware area and
-deletes it. Both scripts below only use that. They copy one checked file to
-the mounted drive and never talk to the player themselves. The bootloader
-itself is never changed, so the same steps always work to go back.
+deletes it. Installing and going back only use that; the bootloader itself
+is never changed. After the install the hold switch chooses at power-on:
+off starts Rockbox, on starts the original firmware.
 
-After the install, the **hold switch** chooses at power-on: **off starts
-Rockbox, on starts the original firmware**.
-
-### Once: keep a copy of the original firmware
-
-From the backup made with `yps3_backup.py` (use the `_ecc` file; the other
-one has uncorrected bit errors and is refused):
+Everything the owner needs goes into one folder that works without the
+source tree and is meant to be kept off the PC as well:
 
 ```sh
-cd utils/s5l8700_dfu
-./yps3_mkrom.py extract ../../nanddump/backup/hidden_area_ecc.img S3-original.ROM
+utils/s5l8700_dfu/yps3-mkkit.sh        # -> ~/YPS3-rescue-kit
 ```
 
-Keep `S3-original.ROM` somewhere safe as well (it isn't committed). An
-official Samsung `S3.ROM` for the YP-S3 also works.
+It needs the backup from `yps3_backup.py` (`nanddump/backup`, using
+`hidden_area_ecc.img`; the plain image has uncorrected bit errors and is
+refused) and three builds: `build-yps3` (bootloader), `build-yps3-dev`
+(bootloader with `-DYPS3_NO_AUTOBOOT`) and `build-yps3-full` (main build
+after `make zip`); other directories can be given as arguments. The kit
+holds the original image (`yps3_mkrom.py extract`, checked against the
+known sha256), the combined image (`yps3_mkrom.py combine`), both
+bootloaders, `rockbox.zip` and `rockbox.yps3`, the scripts, the udev rule,
+`README.txt` and `SHA256SUMS`.
 
-### Install
-
-```sh
-./yps3_mkrom.py combine S3-original.ROM ../../build-yps3/rockboot.ebn S3-combined.ROM
-./yps3-install.sh /media/$USER/S31 S3-combined.ROM ../../build-yps3-main/rockbox.zip
-```
-
-`/media/$USER/S31` stands for the mounted **music** drive (gigabytes), not the
-40 MB system drive; the scripts refuse a drive under 512 MB. Then eject the
-drive, unplug, switch the player off and on, and wait while it writes the
-firmware.
-
-### Go back to the original firmware
-
-```sh
-./yps3-restore.sh /media/$USER/S31            # uses S3-original.ROM here
-```
-
-Eject, unplug, switch off and on. The original firmware starts (its settings
-may be reset). Delete `.rockbox` from the drive if you like.
-
-If neither Rockbox nor the original firmware starts: the bootloader still
-reads `S3.ROM` before it starts anything, so the drive only has to be mounted
-some other way. Put the player in DFU mode (pin in the reset hole while
-holding the power switch, cable plugged in) and run
-`s5l8700_dfu.py run rockboot.ebn`, which starts Rockbox from the drive. If
-`.rockbox` itself is broken, use the development bootloader and
-`yps3_nanddump.py load --addr 0x08000000 --no-reset rockbox.yps3` instead
-(see the Development loop). Connect USB in Rockbox, run `yps3-restore.sh`,
-eject, and restart.
+The procedures (no-op upgrade first, install, daily use, going back via
+Rockbox's USB drive or MTP, DFU rescue, broken music drive) are in the
+README. Still to be verified on the player: that stage 2 picks up a file
+copied through the original firmware's MTP mode, what the update screen
+looks like and how long it takes, and the stage 2 self-format of an
+unreadable music drive.
 
 ## Roadmap
 
