@@ -12,8 +12,9 @@ die() {
 }
 
 # check_music_drive MOUNTPOINT IMAGE_BYTES [--force]
-# The player has two drives: the music drive (gigabytes) and a 40 MB system
-# drive. Samsung's bootloader only looks for S3.ROM on the music drive.
+# Samsung's bootloader only looks for S3.ROM on the music drive (gigabytes).
+# Rockbox shows only that one; the size check is a safety net against
+# picking another disk (or the 40 MB system partition, if it ever shows).
 check_music_drive() {
     local mnt=$1 need=$2 force=$3 line total avail target
     [ -d "$mnt" ] || die "$mnt is not a directory"
@@ -22,8 +23,8 @@ check_music_drive() {
     [ "$(realpath "$mnt")" = "$(realpath "$target")" ] ||
         die "$mnt is not a mount point (it is inside $target)"
     [ "$total" -ge $((512 * 1024 * 1024)) ] ||
-        die "$mnt has only $((total / 1024 / 1024)) MB: this looks like the" \
-            "40 MB system drive, use the music drive"
+        die "$mnt has only $((total / 1024 / 1024)) MB: not the player's" \
+            "music drive"
     [ "$avail" -ge $((need + 1024 * 1024)) ] ||
         die "$mnt needs $((need / 1024 / 1024 + 1)) MB free," \
             "has $((avail / 1024 / 1024)) MB"

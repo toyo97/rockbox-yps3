@@ -1,8 +1,9 @@
 # Samsung YP-S3: permanent install and restore, design note
 
-Status: implemented (chain mode in `crt0.S`, tools in `utils/s5l8700_dfu`);
-the combined image has run from SDRAM over DFU, nothing has been written
-to the firmware area yet. The goal is a
+Status: implemented (chain mode in `crt0.S`, tools in `utils/s5l8700_dfu`).
+October 2026: the no-op upgrade worked (the original image written through
+stage 2's upgrade path); the combined image has only run from SDRAM over
+DFU, it hasn't been installed yet. The goal is a
 Rockbox install that starts without the USB cable, and a restore to the
 original firmware (OF) that the owner can run alone with one documented
 script.
@@ -97,8 +98,8 @@ Build Dir : NeoFirm
 3. Load area 0 into RAM ("Check Config", `09e016d8`).
 4. **"D. FIRMWARE UPGRADE CHECK"** (`09e035ec`), run when config word 0 is
    not 0xFEFE or config word 2 is 1. The dump has `0000fefe 0000beef
-   00000001`, so it runs on this player [H for the values, L whether
-   word 2 stays 1]. It looks for `/a/S3.ROM` or `/a/S3J.ROM`. When one is
+   00000001`, so it runs on this player [H, confirmed by the no-op
+   upgrade]. It looks for `/a/S3.ROM` or `/a/S3J.ROM`. When one is
    found:
    1. Read it into RAM (0x08000000). The file size must equal `Total Size`
       and the checksum must match.
@@ -125,10 +126,10 @@ Build Dir : NeoFirm
 8. If no image loads, it falls back to stage 2's "USB Mode".
 
 `/a/` is TFS4 volume 0, which is partition 0 of the MBR. That's the **music
-partition**, the same one Rockbox exposes and writes. **[M] the volume
-letter mapping is the TFS4 convention, not yet seen in the code.** The 40
-MiB system partition is volume 1. `/a/SYSDATA.bin` is a second upgrade
-path that only writes area 3. We don't use it.
+partition**, the same one Rockbox exposes and writes (confirmed by the
+no-op upgrade). The 40 MiB system partition is volume 1.
+`/a/SYSDATA.bin` is a second upgrade path that only writes area 3. We
+don't use it.
 
 ### 1.4 Area 0 (config) [M]
 
@@ -251,8 +252,11 @@ Developer checks, read only, with the development bootloader:
   `yps3_nanddump.py load --addr 0x08000000 --no-reset S3-combined.ROM`
   (jumps to 0x08000000, the `ldr pc` goes to 0x09800000, so the chain path
   runs). **Done (October 2026): with hold off it chained into rockboot and
-  Rockbox started normally. Hold on not tested yet.** This is not stage 2's
-  hand-over state (caches, MIUCON);
+  Rockbox started normally. With hold on the OF started (blinking S3 logo)
+  but hung at the logo for minutes.** This is not stage 2's hand-over state
+  (caches, MIUCON, clocks, whatever stage 2 sets up for the OF), so the
+  real behaviour with hold on is only known after the install (see the
+  risks);
 * after the install: hold off starts Rockbox, hold on the OF; areas 1/4
   read back and compared with `S3-combined.ROM`.
 
@@ -262,10 +266,11 @@ Developer checks, read only, with the development bootloader:
 |---|---|---|
 | Chain stub or rockboot crashes after install | player doesn't start (hold off), OF still starts with hold on if the stub works | restore via DFU + Rockbox USB; test over DFU first (section 4) |
 | Stub broken, both paths dead | no start at all | stage 2 still runs the upgrade check first: restore via DFU |
-| Stage 2 doesn't pick up `S3.ROM` (config word 2, file name, volume) | nothing happens | found by the no-op upgrade before any change; fallback is option B |
+| Stage 2 doesn't pick up `S3.ROM` (config word 2, file name, volume) | nothing happens | ruled out for now by the no-op upgrade (it worked); if the OF clears config word 2 later, connecting the OF to a PC once may set it again **[L]**; fallback is option B |
 | Music FAT damaged by Rockbox's writer | stage 2 reformats both partitions at the next start (data lost, player still starts) | existing FTL write tests; back up music |
 | Power loss during the upgrade | copy A or B partly written | `S3.ROM` files are made with 0x1FC cleared, so a half-written copy has no `FWOK` (step 2 overwrites the old sector 0 first) and boot stops in stage 2's USB Mode instead of jumping into it. Then copy the file again. **[L] whether the file is still there after a power loss** (it is deleted only at the end) |
 | OF reacts to the changed header or the extra bytes | OF misbehaves with hold on | **[L]**; restore removes it |
+| OF hangs when started through the stub (hold on). Seen over DFU from the development loader's state (hung at the S3 logo); real boot from stage 2 not tried | original firmware unusable while Rockbox is installed | Rockbox (hold off) still starts; restore through its USB drive: stage 2 handles `S3.ROM` before it starts any image. If it happens, look at what stage 2 sets up before the jump (`09e3517c`, interrupt state) and restore that in the stub |
 | Hold switch input not as expected after stage 2 | wrong choice at start-up | checked after the no-op upgrade; the stub can configure PCON4 itself |
 
 ## 6. Tooling still missing
@@ -276,9 +281,12 @@ Developer checks, read only, with the development bootloader:
 
 ## 7. Open questions
 
-1. Is config word 2 (area 0) always 1, or does the OF clear it? (no-op upgrade)
-2. Is `/a/` the music partition? Which of `S3.ROM` / `S3J.ROM` is tried
-   first? (decompiled lengths 11/12 bytes) (no-op upgrade)
+1. Answered by the no-op upgrade (October 2026): the upgrade check runs,
+   `/a/` is the music partition (MBR partition 0), `S3.ROM` with `FWOK`
+   cleared is accepted, and the OF starts after a short upgrade screen.
+   Still open: whether config word 2 stays 1 (the OF might clear it),
+   whether `S3.ROM` is deleted afterwards, and which of `S3.ROM` /
+   `S3J.ROM` is tried first (decompiled lengths 11/12 bytes).
 3. Fast path or checked path at boot: the 0x1F0/0x1F1 offsets in
    `09e0179c`. Disassemble `09e0179c` to confirm.
 4. Cache/MPU state at the jump (`09e3517c`), and which rockboot init steps

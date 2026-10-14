@@ -108,22 +108,26 @@ lsblk -o NAME,SIZE,LABEL,MOUNTPOINT
 ```
 
 It is the partition of about 3.7 GB (4 GB player), e.g. `sdb1` mounted at
-`/media/$USER/S3`. That mount point is `MUSIC_DRIVE` below. The scripts
-refuse anything under 512 MB, such as the player's 40 MB system drive.
-The original firmware shows no drive but an MTP device (`mtp://...`).
+`/media/$USER/S3`; Rockbox shows only this partition. That mount point is
+`MUSIC_DRIVE` below. As a safety net against picking another disk, the
+scripts refuse anything under 512 MB. The original firmware shows no drive
+but an MTP device (`mtp://...`).
 
 ### 1. First: the no-op upgrade (proves the way back works)
 
 Once, before installing: write the original firmware over itself. Nothing
 changes, but it proves that the player takes `S3.ROM` from the drive.
+**Done on this player (October 2026): it worked.**
 
 1. Charge the battery. Get the music drive mounted: start Rockbox over DFU
    (Rescue, way A) and plug the cable in.
 2. `utils/s5l8700_dfu/yps3-restore.sh MUSIC_DRIVE`
 3. Eject, unplug the cable, switch off (hold the power switch until the
    screen goes dark), switch on.
-4. Success: the original firmware starts and `S3.ROM` is gone from the
-   drive. Otherwise see "When S3.ROM stays".
+4. The player shows a short upgrade screen, then the original firmware
+   starts. `S3.ROM` should then be gone from the drive **[NOT YET
+   CHECKED]**. If the original firmware doesn't start after the upgrade
+   screen, see "When S3.ROM stays".
 
 ### 2. Install
 
@@ -222,12 +226,14 @@ music), so a very broken drive may already be repaired after a restart.
 
 ### When S3.ROM stays, and what an update looks like
 
-What the player shows while writing and how long it takes isn't known yet
-(about 50 MB, probably a minute or two). Charge the battery first, unplug
-the cable, and don't switch off until a firmware has started. Success
-means `S3.ROM` is gone from the drive.
+The player shows a short upgrade screen, then starts the new firmware
+(seen with the original firmware, October 2026). Charge the battery
+first, unplug the cable, and don't switch off until a firmware has
+started. Afterwards `S3.ROM` should be gone from the drive **[NOT YET
+CHECKED]**.
 
-If `S3.ROM` is still there after switching off and on:
+If there was no upgrade screen and `S3.ROM` is still there after switching
+off and on:
 
 * make sure the player was really off and the cable unplugged;
 * check that the file is in the top folder of the music drive, named
