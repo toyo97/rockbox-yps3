@@ -37,7 +37,7 @@
 
     Notes:
     - sink_dma_stop is untested, not sure if implemented the right way
-    - recording is not implemented
+    - recording: YP-S3 only (FM tuner), see the recording section
 */
 
 static volatile int locked = 0;
@@ -118,9 +118,27 @@ static void dma_start_chunk(void)
     DMACOM0 = 4;
 }
 
+#ifdef HAVE_RECORDING
+static bool play_active, rec_active;
+static void rec_dma_done(void);
+#endif
+
 void INT_DMA(void) ICODE_ATTR;
 void INT_DMA(void)
 {
+#ifdef HAVE_RECORDING
+    /* the recording channel shares the interrupt; while it runs, see which
+       channel completed */
+    if (rec_active) {
+        unsigned int status = DMAALLST;
+        if (status & (DMAALLST_WCOM2 | DMAALLST_HCOM2)) {
+            rec_dma_done();
+        }
+        if (!(status & (DMAALLST_WCOM0 | DMAALLST_HCOM0))) {
+            return;
+        }
+    }
+#endif
     DMACOM0 = 7;    /* clear the completion interrupt */
     if (!nextsize) {
         if (!pcm_play_dma_complete_callback(PCM_DMAST_OK, &nextbuf, &nextsize))
@@ -182,6 +200,9 @@ static void sink_dma_start(const void* addr, size_t size)
     /* DMA channel on */
     nextbuf = addr;
     nextsize = size;
+#ifdef HAVE_RECORDING
+    play_active = true;
+#endif
 #ifdef SAMSUNG_YPS3
     DMACOM0 = 7;
     dma_start_chunk();
@@ -206,7 +227,15 @@ static void sink_dma_stop(void)
 {
     /* DMA channel off */
     DMACOM0 = 5;
-    
+
+#ifdef HAVE_RECORDING
+    play_active = false;
+    if (rec_active) {
+        /* the receiver needs the clocks of the transmitter */
+        I2STXCOM = (1 << 3) | (1 << 2);
+        return;
+    }
+#endif
     /* IIS Tx off */
     I2STXCOM = (1 << 3) |   /* 1 = transmit mode on */
                (0 << 2) |   /* 1 = I2S interface enable */
@@ -330,37 +359,121 @@ struct pcm_sink builtin_pcm_sink = {
  ** Recording DMA transfer
  **/
 #ifdef HAVE_RECORDING
+/*  The I2S receiver on DMA channel 2, set up like the original firmware
+    does it [from OF: 0x0815E450, start 0x0815F614, stop 0x0815F55C]:
+    DMACON2 for I2S -> memory in halfwords, I2SRXCON = 0x60, the receiver
+    on first, then DMA requests once the LR clock runs. The S5L8700 is the
+    I2S master and the clocks come from the transmitter, which therefore
+    stays enabled (without DMA requests) while recording. Like playback,
+    each chunk is started from the completion interrupt (YP-S3 only). */
+static void *rec_buf;
+static size_t rec_size;
+
+static void rec_start_chunk(void)
+{
+    size_t n = MIN(rec_size, DMA_CHUNK_MAX);
+    /* no dirty lines of the buffer may be written back over the data */
+    commit_discard_dcache();
+    DMABASE2 = (unsigned int)rec_buf;
+    DMATCNT2 = n / 2 - 1;
+    rec_buf += n;
+    rec_size -= n;
+    DMACOM2 = 4;
+}
+
+/* from INT_DMA */
+static void rec_dma_done(void)
+{
+    DMACOM2 = 7;            /* clear the completion interrupt */
+    commit_discard_dcache();    /* the CPU must see the new data */
+    if (!rec_size) {
+        if (!pcm_rec_dma_complete_callback(PCM_DMAST_OK, &rec_buf, &rec_size))
+            return;
+        rec_start_chunk();
+        pcm_rec_dma_status_callback(PCM_DMAST_STARTED);
+        return;
+    }
+    rec_start_chunk();
+}
+
+/* waits for a whole LR clock period (I2SSTATUS bit 0) */
+static void wait_lrck(void)
+{
+    long timeout = 100000;
+    while ((I2SSTATUS & 1) && --timeout);
+    timeout = 100000;
+    while (!(I2SSTATUS & 1) && --timeout);
+}
+
 void pcm_rec_lock(void)
 {
+    sink_lock();
 }
 
 void pcm_rec_unlock(void)
 {
+    sink_unlock();
 }
 
 void pcm_rec_dma_stop(void)
 {
+    pcm_rec_lock();
+    DMACOM2 = 5;
+    I2SRXCOM = 0;
+    rec_active = false;
+    rec_size = 0;
+    if (!play_active) {
+        /* as sink_dma_stop() leaves it */
+        I2STXCOM = (1 << 3) | (1 << 1);
+    }
+    pcm_rec_unlock();
 }
 
 void pcm_rec_dma_start(void *addr, size_t size)
 {
-    (void)addr;
-    (void)size;
+    pcm_rec_lock();
+    rec_buf = addr;
+    rec_size = size;
+    rec_active = true;
+
+    /* clocks from the transmitter */
+    I2SCLKCON = (1 << 0);
+    if (!play_active) {
+        I2STXCOM = (1 << 3) | (1 << 2);
+    }
+
+    /* receive mode and interface on, then DMA requests on */
+    I2SRXCOM = (1 << 3) | (1 << 2);
+    wait_lrck();
+    DMACOM2 = 7;
+    rec_start_chunk();
+    I2SRXCOM = (1 << 3) | (1 << 2) | (1 << 1);
+    pcm_rec_unlock();
 }
 
 void pcm_rec_dma_close(void)
 {
+    pcm_rec_dma_stop();
 }
-
 
 void pcm_rec_dma_init(void)
 {
+    DMACOM2 = 5;
+    DMACON2 = (0 << 30) |       /* DEVSEL */
+              (0 << 29) |       /* DIR: I2S to memory */
+              (0 << 24) |       /* SCHCNT */
+              (1 << 22) |       /* DSIZE: halfwords */
+              (0 << 19) |       /* BLEN */
+              (0 << 18) |       /* RELOAD */
+              (0 << 17) |       /* HCOMINT */
+              (1 << 16) |       /* WCOMINT */
+              (0 << 0);         /* OFFSET */
+    I2SRXCON = 0x60;            /* [from OF], bits not documented */
 }
-
 
 const void * pcm_rec_dma_get_peak_buffer(void)
 {
-    return NULL;
+    return (const void *)DMACADDR2;
 }
 
 #endif /* HAVE_RECORDING */
