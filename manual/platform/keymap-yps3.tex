@@ -97,15 +97,15 @@
 \newcommand{\ActionPsExit}{\ButtonMenu{} or \ButtonBack}
 \newcommand{\ActionPsToggleMode}{N/A}
 
-%Button actions, Recording screen context (no recording on this player)
-\newcommand{\ActionRecPause}{N/A}
-\newcommand{\ActionRecExit}{N/A}
-\newcommand{\ActionRecNewfile}{N/A}
-\newcommand{\ActionRecMenu}{N/A}
-\newcommand{\ActionRecSettingsInc}{N/A}
-\newcommand{\ActionRecSettingsDec}{N/A}
-\newcommand{\ActionRecPrev}{N/A}
-\newcommand{\ActionRecNext}{N/A}
+%Button actions, Recording screen context (FM recording only)
+\newcommand{\ActionRecPause}{\ButtonSelect}
+\newcommand{\ActionRecExit}{\ButtonBack}
+\newcommand{\ActionRecNewfile}{Long \ButtonSelect}
+\newcommand{\ActionRecMenu}{\ButtonMenu}
+\newcommand{\ActionRecSettingsInc}{\ButtonRight}
+\newcommand{\ActionRecSettingsDec}{\ButtonLeft}
+\newcommand{\ActionRecPrev}{\ButtonUp}
+\newcommand{\ActionRecNext}{\ButtonDown}
 
 %Button actions, FM radio context
 \newcommand{\ActionFMMenu}{Long \ButtonSelect}
@@ -120,6 +120,7 @@
 \newcommand{\ActionFMNext}{\ButtonRight}
 \newcommand{\ActionFMPrevPreset}{N/A}
 \newcommand{\ActionFMNextPreset}{N/A}
+\newcommand{\ActionFMRecord}{Long \ButtonBack}
 
 %Button actions, Bookmark screen context
 \newcommand{\ActionBmDelete}{\ButtonPower}
