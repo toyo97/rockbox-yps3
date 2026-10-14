@@ -28,6 +28,7 @@
         \opt{samsungyh920,samsungyh925}{900~mAh}%
         \opt{samsungyh820}{650~mAh}%
         \opt{xduoox3}{2000~mAh}%
+        \opt{samsungyps3}{580~mAh}%
         , which is the capacity value for the standard battery shipped with the \dap.
           Rockbox uses this value for runtime estimation, not battery percentage
           calculation. Changing this setting has no effect whatsoever on
@@ -334,6 +335,7 @@ therefore result in better runtime.
 } %\nopt{hold_button}
 
 
+\opt{usb_hid,usb_power,multidrive_usb}{
 \subsection{USB}
     Options relating to USB.
 
@@ -904,3 +906,4 @@ therefore result in better runtime.
         multiple drives, such as some car audio systems.
     }
   \end{description}
+} % \opt{usb_hid,usb_power,multidrive_usb}

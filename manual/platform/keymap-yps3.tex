@@ -1,0 +1,139 @@
+% Key mappings for the Samsung YP-S3, from apps/keymaps/keymap-yps3.c and
+% the plugin keymaps (apps/plugins/lib/pluginlib_actions.c)
+
+\newcommand{\ButtonBack}{\btnfnt{Back}}
+\newcommand{\ButtonMenu}{\btnfnt{Menu}}
+\newcommand{\ButtonUp}{\btnfnt{Up}}
+\newcommand{\ButtonDown}{\btnfnt{Down}}
+\newcommand{\ButtonLeft}{\btnfnt{Left}}
+\newcommand{\ButtonRight}{\btnfnt{Right}}
+\newcommand{\ButtonSelect}{\btnfnt{Select}}
+\newcommand{\ButtonPower}{\btnfnt{Power}}
+\newcommand{\ButtonHold}{\btnfnt{Hold}}
+
+%Button actions, standard context
+\newcommand{\ActionStdPrev}{\ButtonUp}
+\newcommand{\ActionStdPrevRepeat}{Long \ButtonUp}
+\newcommand{\ActionStdNext}{\ButtonDown}
+\newcommand{\ActionStdNextRepeat}{Long \ButtonDown}
+\newcommand{\ActionStdCancel}{\ButtonBack{} or \ButtonLeft}
+\newcommand{\ActionStdOk}{\ButtonSelect{} or \ButtonRight}
+\newcommand{\ActionStdMenu}{\ButtonMenu}
+\newcommand{\ActionStdContext}{Long \ButtonSelect}
+\newcommand{\ActionStdQuickScreen}{Long \ButtonMenu}
+\newcommand{\ActionQuickScreenExit}{\ButtonMenu{} or \ButtonBack}
+\newcommand{\ActionStdRec}{N/A}
+%a button without harmful side effects for USB charging
+\newcommand{\ActionStdUsbCharge}{\ButtonDown}
+
+%Button actions, wps context
+\newcommand{\ActionWpsPlay}{\ButtonSelect}
+\newcommand{\ActionWpsStop}{Long \ButtonPower}
+\newcommand{\ActionWpsSkipPrev}{\ButtonLeft}
+\newcommand{\ActionWpsSeekBack}{Long \ButtonLeft}
+\newcommand{\ActionWpsSkipNext}{\ButtonRight}
+\newcommand{\ActionWpsSeekFwd}{Long \ButtonRight}
+\newcommand{\ActionWpsVolDown}{\ButtonDown}
+\newcommand{\ActionWpsVolUp}{\ButtonUp}
+\newcommand{\ActionWpsBrowse}{\ButtonBack}
+\newcommand{\ActionWpsContext}{Long \ButtonSelect}
+\newcommand{\ActionWpsMenu}{\ButtonMenu}
+\newcommand{\ActionWpsQuickScreen}{Long \ButtonMenu}
+\newcommand{\ActionWpsPitchScreen}{N/A}
+\newcommand{\ActionWpsIdThreeScreen}{N/A}
+\newcommand{\ActionWpsPlaylist}{N/A}
+\newcommand{\ActionWpsHotkey}{N/A}
+\newcommand{\ActionWpsAbSetBNextDir}{N/A}
+\newcommand{\ActionWpsAbSetAPrevDir}{N/A}
+\newcommand{\ActionWpsAbReset}{N/A}
+
+%Button actions, tree context
+% no ACTION_TREE_WPS in the tree context: Menu opens the main menu, where
+% Menu is ACTION_TREE_WPS
+\newcommand{\ActionTreeWps}{\ButtonMenu, \ButtonMenu}
+\newcommand{\ActionTreeStop}{Long \ButtonPower}
+\newcommand{\ActionTreeEnter}{\ButtonSelect{} or \ButtonRight}
+\newcommand{\ActionTreeParentDirectory}{\ButtonBack{} or \ButtonLeft}
+\newcommand{\ActionTreeHotkey}{N/A}
+
+%Button actions, YesNo context
+\newcommand{\ActionYesNoAccept}{\ButtonSelect}
+
+%Button actions, Setting context
+\newcommand{\ActionSettingInc}{\ButtonUp}
+\newcommand{\ActionSettingDec}{\ButtonDown}
+
+%Button actions, Alarm screen (the time setting screen)
+\newcommand{\ActionAlarmSet}{\ButtonSelect}
+\newcommand{\ActionAlarmCancel}{\ButtonBack}
+\newcommand{\ActionAlarmHoursInc}{\ButtonUp}
+\newcommand{\ActionAlarmHoursDec}{\ButtonDown}
+
+%Button actions, Virtual Keyboard Context
+\newcommand{\ActionKbdLeft}{\ButtonLeft}
+\newcommand{\ActionKbdRight}{\ButtonRight}
+\newcommand{\ActionKbdUp}{\ButtonUp}
+\newcommand{\ActionKbdDown}{\ButtonDown}
+\newcommand{\ActionKbdSelect}{\ButtonSelect}
+\newcommand{\ActionKbdDone}{\ButtonMenu}
+\newcommand{\ActionKbdAbort}{\ButtonBack}
+\newcommand{\ActionKbdPageFlip}{\ButtonPower}
+\newcommand{\ActionKbdCursorLeft}{N/A}
+\newcommand{\ActionKbdCursorRight}{N/A}
+\newcommand{\ActionKbdBackSpace}{N/A}
+\newcommand{\ActionKbdMorseInput}{N/A}
+\newcommand{\ActionKbdMorseSelect}{N/A}
+
+%Button actions, Pitch Screen context
+\newcommand{\ActionPsIncSmall}{\ButtonUp}
+\newcommand{\ActionPsIncBig}{Long \ButtonUp}
+\newcommand{\ActionPsDecSmall}{\ButtonDown}
+\newcommand{\ActionPsDecBig}{Long \ButtonDown}
+\newcommand{\ActionPsNudgeLeft}{\ButtonLeft}
+\newcommand{\ActionPsNudgeRight}{\ButtonRight}
+\newcommand{\ActionPsSlower}{Long \ButtonLeft}
+\newcommand{\ActionPsFaster}{Long \ButtonRight}
+\newcommand{\ActionPsReset}{\ButtonSelect}
+\newcommand{\ActionPsExit}{\ButtonMenu{} or \ButtonBack}
+\newcommand{\ActionPsToggleMode}{N/A}
+
+%Button actions, Recording screen context (no recording on this player)
+\newcommand{\ActionRecPause}{N/A}
+\newcommand{\ActionRecExit}{N/A}
+\newcommand{\ActionRecNewfile}{N/A}
+\newcommand{\ActionRecMenu}{N/A}
+\newcommand{\ActionRecSettingsInc}{N/A}
+\newcommand{\ActionRecSettingsDec}{N/A}
+\newcommand{\ActionRecPrev}{N/A}
+\newcommand{\ActionRecNext}{N/A}
+
+%Button actions, FM radio context
+\newcommand{\ActionFMMenu}{Long \ButtonSelect}
+\newcommand{\ActionFMPreset}{Long \ButtonMenu}
+\newcommand{\ActionFMStop}{Long \ButtonPower}
+\newcommand{\ActionFMMode}{\ButtonMenu}
+\newcommand{\ActionFMExit}{\ButtonBack}
+\newcommand{\ActionFMPlay}{\ButtonSelect}
+\newcommand{\ActionFMSettingsInc}{\ButtonUp}
+\newcommand{\ActionFMSettingsDec}{\ButtonDown}
+\newcommand{\ActionFMPrev}{\ButtonLeft}
+\newcommand{\ActionFMNext}{\ButtonRight}
+\newcommand{\ActionFMPrevPreset}{N/A}
+\newcommand{\ActionFMNextPreset}{N/A}
+
+%Button actions, Bookmark screen context
+\newcommand{\ActionBmDelete}{\ButtonPower}
+
+%Plugin lib actions
+\newcommand{\PluginUp}{\ButtonUp}
+\newcommand{\PluginDown}{\ButtonDown}
+\newcommand{\PluginLeft}{\ButtonLeft}
+\newcommand{\PluginRight}{\ButtonRight}
+\newcommand{\PluginUpRepeat}{Long \ButtonUp}
+\newcommand{\PluginDownRepeat}{Long \ButtonDown}
+\newcommand{\PluginLeftRepeat}{Long \ButtonLeft}
+\newcommand{\PluginRightRepeat}{Long \ButtonRight}
+\newcommand{\PluginCancel}{\ButtonBack}
+\newcommand{\PluginExit}{\ButtonMenu}
+\newcommand{\PluginSelect}{\ButtonSelect}
+\newcommand{\PluginSelectRepeat}{Long \ButtonSelect}

@@ -1,0 +1,33 @@
+% Going back to the original firmware on the Samsung YP-S3. Summary of
+% "3. Go back to the original firmware" in YPS3-PORT.md.
+\label{ref:yps3_uninstall}
+Going back to the original firmware works like the installation: the
+script \fname{yps3-restore.sh} in \fname{utils/s5l8700\_dfu/} copies the original
+firmware image (by default \fname{S3-original.ROM}) to the music drive as
+\fname{S3.ROM}, and the \playerman{} bootloader writes it at the next
+power-on. \fname{YPS3-PORT.md} in the source tree has the exact commands.
+
+\begin{description}
+  \item[Through Rockbox's USB drive (the normal way).]\leavevmode
+    \begin{enumerate}
+      \item Start Rockbox and connect the \dap{} to the computer.
+      \item Run \fname{yps3-restore.sh MUSIC\_DRIVE}.
+      \item Eject the drive, unplug the cable, switch the \dap{} off and on.
+        The original firmware starts; its settings may be reset. You can
+        delete the \fname{.rockbox} directory from the drive afterwards.
+    \end{enumerate}
+  \item[Through MTP, when the original firmware starts but Rockbox doesn't.]\leavevmode
+    \begin{enumerate}
+      \item Start the original firmware (keep the \ButtonPower{} slider pushed
+        through the start animation, see \reference{ref:Dualboot}), connect
+        the \dap{} and open it once in the file manager so that it gets
+        mounted.
+      \item \fname{gio mount -l} shows the \daps{} \fname{mtp://}
+        address. Its storage folder \fname{S3} is the top folder of the music drive.
+      \item Run \fname{yps3-restore.sh -{}-mtp mtp://<device>/S3/}.
+      \item Disconnect in the file manager, unplug the cable, switch the
+        \dap{} off and on. A short upgrade screen appears, then the original
+        firmware starts; \fname{S3.ROM} is gone afterwards. If not, use DFU
+        mode (see \reference{ref:yps3_rescue}).
+    \end{enumerate}
+\end{description}

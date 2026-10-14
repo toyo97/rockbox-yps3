@@ -12,6 +12,7 @@
 % usually we provide a pdf version of the file for that. Picking the correct
 % one is done by LaTeX automatically, but for checking the filename we need to
 % specify the extension.
+\nopt{samsungyps3}{
 \begin{center}
 \IfFileExists{rockbox_interface/images/\specimg-front.png}
    {\Ifpdfoutput{\includegraphics[height=8cm,width=10cm,keepaspectratio=true]%
@@ -22,6 +23,15 @@
     \typeout{Warning: missing front image}
    }
 \end{center}
+}
+\opt{samsungyps3}{
+  The front of the \dap{} has seven touch-sensitive keys: \ButtonUp{},
+  \ButtonDown{}, \ButtonLeft{} and \ButtonRight{} around \ButtonSelect{} in
+  the middle, and \ButtonBack{} and \ButtonMenu{} in the corners next to
+  \ButtonUp{}. The \ButtonPower{} slider is also the \ButtonHold{} switch:
+  pushed to one side it acts as \ButtonPower{}, moved to the other side it
+  turns hold on and none of the keys have any effect.
+}
 \opt{HAVEREMOTEKEYMAP}{
   % spacing between the two pictures, could possibly be improved
   \begin{center}
@@ -36,7 +46,7 @@
 }
 
 Throughout this manual, the buttons on the \dap{} are labelled according to the
-picture above.
+\nopt{samsungyps3}{picture}\opt{samsungyps3}{description} above.
 
 \opt{erosqnative}{
   \note{The \dap{} has two outputs: Headphone output on the left and Line output on the right.
@@ -564,7 +574,7 @@ To turn on and off your Rockbox enabled \dap{} use the following keys:
       \opt{IPOD_3G_PAD}{\ButtonMenu{} / \ButtonPlay}%
       \opt{IAUDIO_X5_PAD,IRIVER_H10_PAD,SANSA_E200_PAD,SANSA_C200_PAD,ONDA_VX777_PAD%
           ,GIGABEAT_PAD,MROBE100_PAD,GIGABEAT_S_PAD,sansaAMS,PBELL_VIBE500_PAD%
-          ,SANSA_FUZEPLUS_PAD,XDUOO_X3_PAD,AIGO_EROSQ_PAD%
+          ,SANSA_FUZEPLUS_PAD,XDUOO_X3_PAD,AIGO_EROSQ_PAD,SAMSUNG_YPS3_PAD%
           }{\ButtonPower}%
       \opt{COWON_D2_PAD} {\ButtonPower{}, then \ButtonHold}%
       \opt{ONDA_VX777_PAD} {\ButtonPower{}}%
@@ -586,7 +596,7 @@ To turn on and off your Rockbox enabled \dap{} use the following keys:
       \opt{IAUDIO_X5_PAD,IRIVER_H10_PAD,SANSA_E200_PAD,SANSA_C200_PAD%
           ,GIGABEAT_PAD,MROBE100_PAD,GIGABEAT_S_PAD,sansaAMS,COWON_D2_PAD%
           ,PBELL_VIBE500_PAD,ONDA_VX777_PAD,SANSA_FUZEPLUS_PAD,XDUOO_X3_PAD,AIGO_EROSQ_PAD%
-          }{Long \ButtonPower}%
+          ,SAMSUNG_YPS3_PAD}{Long \ButtonPower}%
       \opt{RG_NANO_PAD}{\ButtonPower}%
       \opt{AGPTEK_ROCKER_PAD}{Long \ButtonPower{}}%
           &
@@ -621,7 +631,7 @@ To turn on and off your Rockbox enabled \dap{} use the following keys:
 }%
 \opt{IRIVER_H100_PAD,IRIVER_H300_PAD,IAUDIO_M3_PAD,IRIVER_H10_PAD,MROBE100_PAD
     ,PBELL_VIBE500_PAD,MPIO_HD200_PAD,MPIO_HD300_PAD,SAMSUNG_YH92X_PAD%
-    ,SAMSUNG_YH820_PAD,XDUOO_X3_PAD}{%
+    ,SAMSUNG_YH820_PAD,XDUOO_X3_PAD,SAMSUNG_YPS3_PAD}{%
   In the unlikely event of a software failure, a hardware reset can be
   performed by inserting a paperclip gently into the Reset hole.
 }%
@@ -754,6 +764,15 @@ To turn on and off your Rockbox enabled \dap{} use the following keys:
     the file \fname{/System/OF.mi4}. To boot into the original firmware, press and hold
     for awhile the \ButtonPlay{} button and then immediately after the Samsung logo appears,
     press the \ButtonLeft{} button and keep it pressed until the original firmware starts.
+    }
+
+  \opt{samsungyps3}
+    {
+    Once Rockbox is installed, the \dap{} starts Rockbox when you switch it
+    on. To start the original firmware instead, keep the \ButtonPower{} slider
+    pushed through the whole start animation; when the animation stops on its
+    last frame, let go. The \ButtonHold{} position can't be used to choose,
+    because power and hold are the same slider.
     }
 
   \opt{ondavx777}
