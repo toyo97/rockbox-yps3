@@ -748,10 +748,18 @@ sample_output_stereo:
     teq     r12, r12, asr #31
     eorne   r9, r14, r9, asr #31       @ Clip (-32768...+32767)
 
+#ifdef ROCKBOX_BIG_ENDIAN
+    @ left sample first in memory: the high halfword on big endian ARM
+    and     r8, r8, r14, lsr #16       @ pack first 2 halfwords into 1 word
+    orr     r8, r8, r6, asl #16
+    and     r9, r9, r14, lsr #16       @ pack last 2 halfwords into 1 word
+    orr     r9, r9, r7, asl #16
+#else
     and     r6, r6, r14, lsr #16       @ pack first 2 halfwords into 1 word
     orr     r8, r6, r8, asl #16
     and     r7, r7, r14, lsr #16       @ pack last 2 halfwords into 1 word
     orr     r9, r7, r9, asl #16
+#endif
 
     stmia   r3!, { r8, r9 }
 
@@ -775,8 +783,13 @@ sample_output_stereo:
     teq     r12, r12, asr #31
     eorne   r8, r14, r8, asr #31       @ Clip (-32768...+32767)
 
+#ifdef ROCKBOX_BIG_ENDIAN
+    and     r8, r8, r14, lsr #16       @ pack 2 halfwords into 1 word
+    orr     r8, r8, r6, asl #16
+#else
     and     r6, r6, r14, lsr #16       @ pack 2 halfwords into 1 word
     orr     r8, r6, r8, asl #16
+#endif
 
     str     r8, [r3]
 
