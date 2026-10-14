@@ -46,6 +46,9 @@ static volatile int locked = 0;
 /* for the debug screen: playback DMA activity */
 unsigned long pcm_dbg_irqs, pcm_dbg_starts, pcm_dbg_stops, pcm_dbg_ends;
 int pcm_dbg_locked(void) { return locked; }
+/* set by playback on a track start or skip, and the time from then until
+   the playback channel started */
+long pcm_dbg_change_tick, pcm_dbg_change_ms;
 #endif
 #ifndef SAMSUNG_YPS3
 static const int zerosample = 0;

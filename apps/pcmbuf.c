@@ -858,6 +858,13 @@ void pcmbuf_play_start(void)
             .sampr_changed = pcmbuf_sampr_callback,
         };
         mixer_channel_play_data(PCM_MIXER_CHAN_PLAYBACK, &cbs, NULL, 0);
+#ifdef SAMSUNG_YPS3
+        extern long pcm_dbg_change_tick, pcm_dbg_change_ms;
+        if (pcm_dbg_change_tick) {
+            pcm_dbg_change_ms = (current_tick - pcm_dbg_change_tick) * 1000 / HZ;
+            pcm_dbg_change_tick = 0;
+        }
+#endif
     }
 }
 

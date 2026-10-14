@@ -2995,6 +2995,10 @@ static void audio_on_track_changed(void)
 static void audio_start_playback(const struct audio_resume_info *resume_info,
                                  unsigned int flags)
 {
+#ifdef SAMSUNG_YPS3
+    extern long pcm_dbg_change_tick;
+    pcm_dbg_change_tick = current_tick;  /* debug screen: time to audio */
+#endif
 /*
  * Refuse to start playback if usb audio is active. See gui_wps_show() for
  * a splash message to the user.
@@ -3229,6 +3233,10 @@ static void audio_on_pause(bool pause)
    (Q_AUDIO_SKIP) */
 static void audio_on_skip(void)
 {
+#ifdef SAMSUNG_YPS3
+    extern long pcm_dbg_change_tick;
+    pcm_dbg_change_tick = current_tick;  /* debug screen: time to audio */
+#endif
     id3_mutex_lock();
 
     /* Eat the delta to keep it synced, even if not playing */

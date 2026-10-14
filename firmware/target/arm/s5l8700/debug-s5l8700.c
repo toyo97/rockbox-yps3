@@ -207,6 +207,8 @@ bool dbg_hw_info(void)
             extern unsigned long pcm_dbg_irqs, pcm_dbg_starts, pcm_dbg_stops,
                 pcm_dbg_ends;
             extern int pcm_dbg_locked(void);
+            extern long pcm_dbg_change_ms;
+            _DEBUG_PRINTF("track change to audio: %ld ms", pcm_dbg_change_ms);
             _DEBUG_PRINTF("pcm %s%s irq %lu st %lu sp %lu end %lu",
                           pcm_is_playing() ? "P" : "-",
                           pcm_is_recording() ? "R" : "-", pcm_dbg_irqs,
