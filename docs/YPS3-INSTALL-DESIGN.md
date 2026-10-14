@@ -77,13 +77,20 @@ Build Dir : NeoFirm
 * `Check Sum` is the 32-bit sum of the bytes from 0x200 to `Total Size`.
   The header is not covered, so `FWOK` and the entry literal can change
   without changing it.
-* The bytes between `ROM Size` and `Data Address` are **not padding**
-  (1.44 MB of data), so nothing can be hidden there.
+* The bytes between `ROM Size` and `Data Address` are not padding (1.44
+  MB of data), but nothing ever uses them: a normal start loads only
+  `ROM Size` bytes (see 1.3), and the OF itself only reads the first 16
+  sectors of area 1 and area 3 (its data part, from `Data Address`)
+  through its own copy of the area helpers (`080e6960` read, `080e68e4`
+  write). [H for the code, M that nothing else reads them]
 * Area 1 holds stale data after `Total Size`. The image is only read up
   to `Total Size`.
-* `Total Size` must be at most 0x1E00000 (`09e030f0`). The fast load path
-  reads `Total Size/512 + 9` sectors after sector 0, so keep it a few
-  sectors below that limit.
+* `Total Size` must be at most 0x1E00000 (`09e030f0`); the checked path
+  loads `Total Size` bytes, the fast path `ROM Size/512 + 9` sectors
+  after sector 0.
+* The OF sets byte 0x1F1 of area 1 sector 0 to 1 (rewriting the first 16
+  sectors) when `/CONFIG.DAT` exists (`of_main.c` near line 113095),
+  which makes stage 2 take another load path (1.3, step 5).
 
 ### 1.3 Stage 2 boot sequence (`09e018d4`) [M]
 
@@ -114,9 +121,14 @@ Build Dir : NeoFirm
    with the normal boot.
 5. "Check Magic Code" (`09e0179c`): read sector 0 of area 1. In our dump,
    bytes 0x1F0/0x1F1 are 0, which selects the **fast path** (`09e02764`).
-   It checks `FWOK` in sector 0, then loads the rest of the image to
-   0x08000200 **without the checksum**. **[M] the byte offsets come from
-   Ghidra's stack layout.**
+   It checks `FWOK` in sector 0, then loads **`ROM Size/512 + 9` sectors**
+   (header field +0x50; the checked and upgrade paths use `Total Size`,
+   +0x58) from sector 1 to 0x08000200, **without the checksum**. So a
+   normal start loads only the OF's code; the OF reads its data part
+   itself. **Confirmed on the player (October 2026)**: a combined image
+   with rockboot past `ROM Size` started Rockbox right after the upgrade
+   (the upgrade path jumps with the whole file in RAM) and not on the
+   next start.
 6. Otherwise, the checked path (`09e018b4`) loads area 1 and verifies the
    checksum. If that fails, it loads area 4, checks `FWOK` and rewrites
    area 1 from it ("E. LOAD IMAGE", `09e0346c`).
@@ -156,15 +168,22 @@ Combined image layout (`Total Size` at most about 30 MiB):
 
 ```
 0x0000000  OF header, unchanged except:
-             word at 0x004 -> 0x09800000, rockboot (was 0x08001000)
-             Total Size / Check Sum -> new values
-0x0000200  OF image bytes 0x200 .. 25160329, byte for byte
-0x1800000  rockboot.ebn as built (about 100 KB), 4-byte aligned
+             word at 0x004 -> 0x088A1000, rockboot (was 0x08001000)
+             ROM Size -> end of rockboot (9044384 -> about 9140000)
+             Check Sum -> new value; Total Size unchanged
+0x0000200  OF code, byte for byte, up to the old ROM Size (0x8A01A0)
+0x08A1000  rockboot.ebn as built (about 100 KB), 4-byte aligned, over
+           unused bytes of the gap before Data Address
+0x0A00000  OF data part (Data Address), byte for byte
 ```
 
 The OF stays where it expects to be (entry 0x08001000, data at 10 MiB), so
-nothing in the OF is relocated or patched. Stage 2 loads the whole image
-and jumps to 0x08000000, then the `ldr pc` goes to the stub.
+nothing in the OF is relocated or patched. A normal start loads `ROM Size`
+bytes, now including rockboot, so a start takes about as long as before;
+then the `ldr pc` goes to the stub. (The first layout put rockboot at
+0x1800000, past `ROM Size`: only loaded by the upgrade start.) Setting
+`ROM Size = Total Size` would also work but loads 25 MB on every start
+instead of 9 MB.
 
 **Chain stub** (the first instructions of `_newstart` in rockboot's crt0; it
 clobbers only `ip` and the flags):
@@ -250,7 +269,7 @@ Developer checks, read only, with the development bootloader:
   1 and 4 compared with the backup up to N sectors; the hold switch state;
 * before the install, the combined image over DFU:
   `yps3_nanddump.py load --addr 0x08000000 --no-reset S3-combined.ROM`
-  (jumps to 0x08000000, the `ldr pc` goes to 0x09800000, so the chain path
+  (jumps to 0x08000000, the `ldr pc` goes to rockboot, so the chain path
   runs). **Done (October 2026): with hold off it chained into rockboot and
   Rockbox started normally. With hold on the OF started (blinking S3 logo)
   but hung at the logo for minutes.** This is not stage 2's hand-over state
@@ -290,8 +309,9 @@ Developer checks, read only, with the development bootloader:
    `S3.ROM` / `S3J.ROM` is tried first (decompiled lengths 11/12 bytes).
    A file copied over the OF's MTP (storage folder `S3` =
    `/a/`) is picked up too (tested).
-3. Fast path or checked path at boot: the 0x1F0/0x1F1 offsets in
-   `09e0179c`. Disassemble `09e0179c` to confirm.
+3. Answered: normal starts take the fast path (`ROM Size` bytes), see
+   1.3. Still open: what exactly the OF's `/CONFIG.DAT` byte (0x1F1)
+   changes at the next start.
 4. Cache/MPU state at the jump (`09e3517c`), and which rockboot init steps
    are safe when stage 1/2 already ran.
 5. Does the OF ever read its image header or the hidden area beyond area 0
