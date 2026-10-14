@@ -127,7 +127,11 @@
 #define BTN_PAUSE      BUTTON_BACK
 
 #elif ((CONFIG_KEYPAD == SAMSUNG_YPR0_PAD || CONFIG_KEYPAD == SAMSUNG_YPS3_PAD))
+#if CONFIG_KEYPAD == SAMSUNG_YPS3_PAD
+#define BTN_FIRE       BUTTON_SELECT /* holding POWER powers off */
+#else
 #define BTN_FIRE       BUTTON_USER
+#endif
 #define BTN_PAUSE      BUTTON_MENU
 
 #elif (CONFIG_KEYPAD == SONY_NWZ_PAD)
