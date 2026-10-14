@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "ftl-target.h"
+#include "system.h"
 
 #define DIES 2
 #define BLOCKS 4096
@@ -27,7 +28,7 @@ static uint8_t *pages[NPAGES];
 static int lastprog[DIES * BLOCKS];
 bool nand_ll_use_dma, nand_ll_write_enable;
 int nand_ll_last_status;
-static unsigned long n_prog, n_erase, n_violations;
+static unsigned long n_prog, n_erase, n_violations, n_read, n_read_bytes;
 
 static void violation(const char *fmt, ...)
 {
@@ -49,6 +50,8 @@ int nand_ll_read_raw(int bank, unsigned int page, unsigned int col,
 {
     (void)bank;
     if (page >= NPAGES || col + len > PSIZE) return -1;
+    n_read++;
+    n_read_bytes += len;
     if (pages[page]) memcpy(buf, pages[page] + col, len);
     else memset(buf, 0xff, len);
     return 0;
@@ -179,6 +182,39 @@ static int verify(const char *when)
     return bad != 0;
 }
 
+/* "seq": a file copy over USB, sequential 'chunk' sector writes with FAT
+   and FSInfo updates; prints the NAND work per MB written */
+static int bench_seq(int mb, int chunk)
+{
+    static uint8_t data[256 * 512];
+    uint32_t start = FIRST_LBN * 4096 + 3, s, end;   /* not page aligned */
+    unsigned long p0 = n_prog, e0 = n_erase, r0 = n_read, rb0 = n_read_bytes;
+    int k;
+
+    ftl_sim_set_range(8, 7786496);
+    ftl_write_enabled = true;
+    nand_ll_write_enable = true;
+    end = start + mb * 2048;
+    for (s = start; s < end; s += chunk) {
+        int n = MIN(chunk, (int)(end - s));
+        for (k = 0; k < n * 512; k++) data[k] = rand();
+        if (ftl_write(s, n, data)) { printf("write failed\n"); return 1; }
+        if (((s - start) / chunk) % 16 == 15) {
+            /* FAT sector and FSInfo, as the host flushes them */
+            if (ftl_write(40 + (s / 65536) % 64, 1, data) ||
+                ftl_write(9, 1, data)) { printf("fat write failed\n"); return 1; }
+        }
+    }
+    if (ftl_sync()) return 1;
+    printf("seq %d MB in %d sector writes: per MB %.1f programs, %.2f erases, "
+           "%.1f reads (%.1f KB)\n", mb, chunk,
+           (double)(n_prog - p0) / mb, (double)(n_erase - e0) / mb,
+           (double)(n_read - r0) / mb, (double)(n_read_bytes - rb0) / 1024 / mb);
+    ftl_write_log(logf_print);
+    if (ftl_init()) { printf("ftl_init failed\n"); return 1; }
+    return ftl_sim_check(logf_print) || n_violations;
+}
+
 int main(int argc, char **argv)
 {
     int ops = argc > 2 ? atoi(argv[2]) : 2000, i, fails = 0;
@@ -189,6 +225,11 @@ int main(int argc, char **argv)
     if (ftl_init()) { printf("ftl_init failed\n"); ftl_debug_log(logf_print); return 1; }
     ftl_debug_log(logf_print);
     fails += ftl_sim_check(logf_print);
+    if (argc > 3 && !strcmp(argv[3], "seq")) {
+        fails = bench_seq(ops, argc > 4 ? atoi(argv[4]) : 128);
+        printf("%s\n", fails ? "FAILED" : "PASSED");
+        return fails;
+    }
     ftl_sim_set_range(8, 7786496);
     ftl_write_enabled = true;
     nand_ll_write_enable = true;
