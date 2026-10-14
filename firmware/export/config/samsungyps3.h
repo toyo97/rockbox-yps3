@@ -8,7 +8,7 @@
 #define MODEL_NAME   "Samsung YP-S3"
 
 /* define this if you have recording possibility */
-//#define HAVE_RECORDING
+#define HAVE_RECORDING
 
 /* Define bitmask of input sources - recordable bitmask can be defined
    explicitly if different */
@@ -17,7 +17,9 @@
 /* define the bitmask of hardware sample rates */
 #define HW_SAMPR_CAPS   (SAMPR_CAP_88 | SAMPR_CAP_44 | SAMPR_CAP_22 | SAMPR_CAP_11)
 
-/* define the bitmask of recording sample rates */
+/* define the bitmask of recording sample rates: the codec's ADC runs from
+   the playback clock, start with 44.1 kHz */
+#define REC_SAMPR_CAPS  (SAMPR_CAP_44)
 
 
 

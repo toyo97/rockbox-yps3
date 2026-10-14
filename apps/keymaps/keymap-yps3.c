@@ -230,6 +230,8 @@ static const struct button_mapping button_context_radio[]  = {
     { ACTION_FM_EXIT,            BUTTON_BACK | BUTTON_REL,      BUTTON_BACK },
     { ACTION_FM_PLAY,            BUTTON_SELECT | BUTTON_REL,    BUTTON_SELECT },
 #ifdef HAVE_RECORDING
+    /* long Back: a short one leaves the radio screen */
+    { ACTION_FM_RECORD,          BUTTON_BACK | BUTTON_REPEAT,   BUTTON_NONE },
 #endif
 
     /* Volume */
@@ -245,9 +247,11 @@ static const struct button_mapping button_context_radio[]  = {
 }; /* button_context_radio */
 
 #ifdef HAVE_RECORDING
-/* User - the Rec key on the YP-CP3 - starts and pauses, held opens a new
- * file; left/right set the gain of the selected line */
+/* Select starts and pauses, held opens a new file; Back stops and leaves;
+ * up/down choose a line, left/right set its value (the gain) */
 static const struct button_mapping button_context_recscreen[]  = {
+    { ACTION_REC_PAUSE,          BUTTON_SELECT|BUTTON_REL,      BUTTON_SELECT },
+    { ACTION_REC_NEWFILE,        BUTTON_SELECT|BUTTON_REPEAT,   BUTTON_NONE },
     { ACTION_STD_MENU,           BUTTON_MENU|BUTTON_REL,        BUTTON_MENU },
     { ACTION_SETTINGS_INC,       BUTTON_RIGHT,                  BUTTON_NONE },
     { ACTION_SETTINGS_INCREPEAT, BUTTON_RIGHT|BUTTON_REPEAT,    BUTTON_NONE },

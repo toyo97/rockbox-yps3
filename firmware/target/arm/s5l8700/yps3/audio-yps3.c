@@ -38,11 +38,31 @@ void audio_set_output_source(int source)
     (void)source;
 }
 
+/* The FM tuner is connected to LINPUT3/RINPUT3 of the codec: listening
+   goes through the analog bypass, recording through the ADCs (with the
+   boost mixers to the headphones). */
 void audio_input_mux(int source, unsigned flags)
 {
-    (void)flags;
+#ifdef HAVE_RECORDING
+    static bool last_recording = false;
+    bool recording = (source == AUDIO_SRC_FMRADIO) &&
+                     (flags & SRCF_RECORDING);
 
-    /* the FM tuner is connected to the line inputs of the codec and is
-       routed to the headphones in analog bypass */
-    audiohw_set_bypass(source == AUDIO_SRC_FMRADIO);
+    if (recording != last_recording) {
+        if (recording) {
+            audiohw_set_monitor(false);
+            audiohw_enable_recording(false);
+        }
+        else {
+            audiohw_disable_recording();
+        }
+        last_recording = recording;
+    }
+    if (!recording) {
+        audiohw_set_monitor(source == AUDIO_SRC_FMRADIO);
+    }
+#else
+    (void)flags;
+    audiohw_set_monitor(source == AUDIO_SRC_FMRADIO);
+#endif
 }
