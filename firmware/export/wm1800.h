@@ -21,9 +21,14 @@
 /* Wolfson WM1800 as used in the Samsung YP-S3. There is no public
    documentation; its register map matches the WM8960. */
 
-#define AUDIOHW_CAPS (0)
+#define AUDIOHW_CAPS (LIN_GAIN_CAP)
 
 AUDIOHW_SETTING(VOLUME,     "dB", 0, 1, -74,  6, -25)
+#ifdef HAVE_RECORDING
+/* ADC volume, -17..+30 dB in 0.5 dB steps (register 0xc3 = 0 dB) */
+AUDIOHW_SETTING(LEFT_GAIN,  "dB", 1, 1, -34, 60, 0, val * 5)
+AUDIOHW_SETTING(RIGHT_GAIN, "dB", 1, 1, -34, 60, 0, val * 5)
+#endif
 
 #define WM1800_LINVOL       0x00
 #define WM1800_RINVOL       0x01
@@ -64,6 +69,21 @@ AUDIOHW_SETTING(VOLUME,     "dB", 0, 1, -74,  6, -25)
 #define WM1800_PWR3         0x2f
 #define WM1800_PWR3_LOMIX   (1 << 3)
 #define WM1800_PWR3_ROMIX   (1 << 2)
+
+#define WM1800_LADCVOL      0x15
+#define WM1800_RADCVOL      0x16
+#define WM1800_ADCVOL_VU    (1 << 8)
+#define WM1800_ADCVOL_0DB   0xc3        /* 0.5 dB steps */
+#define WM1800_LADCPATH     0x20
+#define WM1800_RADCPATH     0x21
+#define WM1800_LINBMIX      0x2b
+#define WM1800_RINBMIX      0x2c
+#define WM1800_INBMIX_IN3BOOST(x) ((x) << 4)  /* 0 = off .. 5 = 0 dB, 7 = +6 dB */
+#define WM1800_LBYPASS      0x2d
+#define WM1800_RBYPASS      0x2e
+#define WM1800_BYPASS_B2O   (1 << 7)    /* input boost mixer to output mixer */
+#define WM1800_PWR1_ADCL    (1 << 3)
+#define WM1800_PWR1_ADCR    (1 << 2)
 
 #define WM1800_NUM_REGISTERS 0x38
 

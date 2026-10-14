@@ -139,6 +139,53 @@ void audiohw_close(void)
     wm1800_write(WM1800_PWR1, 0);
 }
 
+#ifdef HAVE_RECORDING
+/*  Recording the FM tuner, set up like the original firmware's FM record
+    mode [from OF: 0x0815AD9C(3), input select 0x0815A774(3)]: LINPUT3 and
+    RINPUT3 through the input boost mixers into the ADCs, and from the boost
+    mixers to the output mixers to listen; the direct LINPUT3 path to the
+    output mixers is off meanwhile. */
+void audiohw_enable_recording(bool source_mic)
+{
+    (void)source_mic;               /* only the tuner */
+
+    wm1800_write(WM1800_LADCPATH, 0);
+    wm1800_write(WM1800_RADCPATH, 0);
+    wm1800_write(WM1800_LINBMIX, WM1800_INBMIX_IN3BOOST(6));
+    wm1800_write(WM1800_RINBMIX, WM1800_INBMIX_IN3BOOST(6));
+    wm1800_clear(WM1800_LOUTMIX, WM1800_OUTMIX_I2O);
+    wm1800_clear(WM1800_ROUTMIX, WM1800_OUTMIX_I2O);
+    wm1800_write(WM1800_LBYPASS, WM1800_BYPASS_B2O);
+    wm1800_write(WM1800_RBYPASS, WM1800_BYPASS_B2O);
+    wm1800_set(WM1800_PWR1, WM1800_PWR1_ADCL | WM1800_PWR1_ADCR);
+}
+
+void audiohw_disable_recording(void)
+{
+    wm1800_clear(WM1800_PWR1, WM1800_PWR1_ADCL | WM1800_PWR1_ADCR);
+    wm1800_write(WM1800_LBYPASS, 0);
+    wm1800_write(WM1800_RBYPASS, 0);
+    wm1800_write(WM1800_LINBMIX, 0);
+    wm1800_write(WM1800_RINBMIX, 0);
+}
+
+/* gain in 0.5 dB steps from 0 dB, see wm1800.h */
+void audiohw_set_recvol(int left, int right, int type)
+{
+    if (type != AUDIO_GAIN_LINEIN) {
+        return;
+    }
+    wm1800_write(WM1800_LADCVOL, WM1800_ADCVOL_0DB + left);
+    wm1800_write(WM1800_RADCVOL, WM1800_ADCVOL_VU | (WM1800_ADCVOL_0DB + right));
+}
+#endif /* HAVE_RECORDING */
+
+/* listening to the tuner without recording: the analog bypass */
+void audiohw_set_monitor(bool enable)
+{
+    audiohw_set_bypass(enable);
+}
+
 void audiohw_set_frequency(int fsel)
 {
     /* the S5L8700 always provides MCLK = 256 Fs */
