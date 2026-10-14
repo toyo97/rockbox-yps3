@@ -29,9 +29,10 @@
     * P1.1: USB power detect
     * P4.7: tuner power/enable
     * P5.2: unknown output
-    * P5.3: unknown output, related to charging (perhaps charge current?)
-    * P5.4: charge status input (only valid if charger enabled)
-    * P5.6: charger enable
+    * P5.3: charge current (0 = about 220 mA, 1 = about 300 mA)
+    * P5.4: charge status input, high while charging (only valid if the
+            charger is enabled)
+    * P5.6: charger enable (high = enabled)
 */
 
 void power_off(void)
@@ -57,10 +58,12 @@ void power_init(void)
 
     /* configure P5.2 / P5.3 / P5.6 as output, P5.4 as input */
     PCON5 = (PCON5 & ~0x0F0FFF00) | 0x01001100;
-    /* P5.2 high (also needed by the NAND), P5.3 and P5.6 low: the
-       original firmware's start-up values */
-    PDAT5 &= ~((1 << 3) | (1 << 6));
-    PDAT5 |= (1 << 2);
+    /* P5.2 high (also needed by the NAND), P5.3 low (220 mA) and P5.6
+       high: the charger on. The original firmware drives P5.6 low at
+       start-up and high with USB power present; the charger only charges
+       from USB power and ends the charge by itself. */
+    PDAT5 &= ~(1 << 3);
+    PDAT5 |= (1 << 2) | (1 << 6);
 }
 
 #if CONFIG_CHARGING
@@ -76,8 +79,8 @@ unsigned int power_input_status(void)
 
 bool charging_state(void)
 {
-    /* check if charger is enabled */
-    if (PDAT5 & (1 << 6)) {
+    /* check if charger is enabled and USB power present */
+    if ((PDAT5 & (1 << 6)) && (PDAT1 & (1 << 1))) {
         /* check if charging is busy */
         return (PDAT5 & (1 << 4));
     }
