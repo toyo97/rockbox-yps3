@@ -35,7 +35,7 @@
 
 #if defined(HAVE_FMRADIO_REC)
 #define FM_RECORDING_SCREEN
-static int fm_recording_screen(void)
+int fm_recording_screen(void)
 {
     bool ret;
 

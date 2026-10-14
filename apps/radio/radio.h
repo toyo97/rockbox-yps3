@@ -72,6 +72,11 @@ int radio_get_art_hid(struct dim *requested_dim);
 
 void next_station(int direction);
 
+#ifdef HAVE_FMRADIO_REC
+/* the recording screen with the radio as its source */
+int fm_recording_screen(void);
+#endif
+
 
 enum fms_exiting {
     FMS_EXIT,

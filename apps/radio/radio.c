@@ -487,18 +487,14 @@ void radio_screen(void)
                     break;
                 }
 #endif /* FM_RECORD_DBLPRE */
-#ifndef SIMULATOR
-                if(audio_status() == AUDIO_STATUS_RECORD)
-                {
-                    rec_command(RECORDING_CMD_START_NEWFILE);
-                    update_type = SKIN_REFRESH_ALL;
-                }
-                else
-                {
-                    rec_command(RECORDING_CMD_START);
-                    update_type = SKIN_REFRESH_ALL;
-                }
-#endif /* SIMULATOR */
+#ifdef HAVE_FMRADIO_REC
+                /* Recording needs the engine set up first, which only the
+                 * recording screen does; rec_command() alone does nothing */
+                fms_fix_displays(FMS_EXIT);
+                fm_recording_screen();
+                fms_fix_displays(FMS_ENTER);
+                update_type = SKIN_REFRESH_ALL;
+#endif
                 break;
 #endif /* #ifdef FM_RECORD */
 
