@@ -32,6 +32,10 @@
 #define BTN_EXTRA5 BUTTON_PLAY
 #define BTN_EXTRA6 BUTTON_NEXT
 #define BTN_EXTRA7 BUTTON_POWER
+#elif (CONFIG_KEYPAD == SAMSUNG_YPS3_PAD)
+/* the menu is on the hold switch, so BACK and MENU are free */
+#define BTN_EXTRA1 BUTTON_BACK
+#define BTN_EXTRA2 BUTTON_MENU
 #endif
 
 /* _SDL_KEYMAPS_H */
