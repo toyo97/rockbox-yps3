@@ -167,8 +167,17 @@ folder, with `.rockbox`, so it looks likely]**:
 
 ### 4. Rescue: nothing starts (DFU mode)
 
-Entering DFU mode: <DFU entry: to be filled in>. The screen stays dark.
-Check that the PC sees it:
+Entering DFU mode:
+
+1. Plug the USB cable in.
+2. Hold the power switch down and keep holding it.
+3. Press a pin into the reset hole for 1-2 seconds, then release the pin.
+4. Wait a moment, then release the power switch. If both are released
+   almost together, the player starts its firmware normally instead; just
+   try again and wait a little longer before letting go of the power
+   switch.
+
+The screen stays dark. Check that the PC sees it:
 
 ```sh
 python3 utils/s5l8700_dfu/s5l8700_dfu.py list
@@ -348,8 +357,10 @@ keymap, audio codec, SDRAM timings and the debug screen.
 
 ## DFU mode facts (from the wiki)
 
-* **How to enter it:** plug in the USB cable. Press a pin into the reset
-  hole on the back while holding the power switch. The screen stays dark.
+* **How to enter it:** with the USB cable plugged in, hold the power switch,
+  press the reset hole with a pin for 1-2 s, release the pin, then shortly
+  after release the power switch (releasing both almost together boots the
+  firmware instead). The screen stays dark.
 * The player then appears as USB device **`0419:0145`**, the same as the
   Meizu M6SL. The old `meizu_dfu` tool works with it, and our loader uses the
   same protocol with the standard "UFD" suffix by default.
@@ -382,9 +393,9 @@ firmware. If it doesn't come back, hold the power slider to switch it off.
 
 1. **Get the binary.** Download `yps3-test-bootloader` from the latest
    GitHub Actions run, or build it yourself (see the next section).
-2. **Put the player in DFU mode:** with the USB cable plugged in, press the
-   reset hole with a pin while holding the power switch. The screen stays
-   dark.
+2. **Put the player in DFU mode:** with the USB cable plugged in, hold the
+   power switch, press the reset hole with a pin for 1-2 s, release the
+   pin, then shortly after the power switch. The screen stays dark.
 3. Run `python3 s5l8700_dfu.py list`, using `sudo` on Linux. It should show
    `0419:0145`.
 4. Run `python3 s5l8700_dfu.py run rockboot.ebn`. If nothing happens, try
