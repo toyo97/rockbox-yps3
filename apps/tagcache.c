@@ -789,6 +789,13 @@ static void allocate_tempbuf(void)
     tempbuf_handle = core_alloc_maximum(&size, &buflib_ops_locked);
     if (tempbuf_handle > 0)
     {
+        /* Leave some room for playback: this buffer can't move or shrink,
+         * and starting playback while it is held would find no memory at
+         * all (audio_reset_buffer() panics). A commit can take minutes on
+         * slow flash. */
+        size_t keep = MIN(size / 8, 2*1024*1024);
+        if (keep > 0 && core_shrink(tempbuf_handle, NULL, size - keep))
+            size -= keep;
         tempbuf = core_get_data(tempbuf_handle);
         tempbuf_size = size;
     }
