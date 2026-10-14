@@ -41,6 +41,54 @@ start:
     .ltorg
 _newstart:
 #if defined(SAMSUNG_YPS3) && defined(BOOTLOADER)
+    /* Chain mode: installed behind the original firmware (OF) image in the
+       hidden area, Samsung's stage 2 bootloader loads us into SDRAM and
+       jumps here (see docs/YPS3-INSTALL-DESIGN.md). Over DFU we run from
+       IRAM and skip all of this. Position independent code only, and
+       nothing may change before the OF decision but ip and the flags. */
+    adr     ip, start
+    cmp     ip, #0x08000000
+    blo     3f                  /* IRAM: started over DFU */
+    cmp     ip, #0x0A000000
+    bhs     3f
+    ldr     ip, =0x3CF00044     /* PDAT4 */
+    ldr     ip, [ip]
+    tst     ip, #0x8            /* P4.3: hold switch on */
+    ldrne   pc, =0x08001000     /* OF entry, state as stage 2 left it */
+
+    /* Rockbox. Stage 2 may have left the caches and the protection unit
+       on: clean the data cache and switch them off before we copy
+       ourselves to IRAM and jump there. */
+    msr     cpsr_c, #0xd3       /* supervisor mode, IRQ/FIQ off */
+    mov     r1, #0
+1:
+    mov     r0, #0
+2:
+    orr     r2, r1, r0
+    mcr     p15, 0, r2, c7, c14, 2  /* clean and flush dcache entry */
+    add     r0, r0, #0x10
+    cmp     r0, #0x40
+    bne     2b
+    add     r1, r1, #0x4000000
+    cmp     r1, #0x0
+    bne     1b
+    mov     r0, #0
+    mcr     p15, 0, r0, c7, c10, 4  /* drain the write buffer */
+    mrc     p15, 0, r0, c1, c0, 0
+    bic     r0, r0, #0x1000         /* icache */
+    bic     r0, r0, #0x5            /* dcache, protection unit */
+    mcr     p15, 0, r0, c1, c0, 0
+    mov     r0, #0
+    mcr     p15, 0, r0, c7, c5, 0   /* flush icache */
+    mcr     p15, 0, r0, c7, c6, 0   /* flush dcache */
+    /* IRAM at address 0 for the exception vectors, as after DFU.
+       PLL and SDRAM are set up again below like after DFU: nothing in
+       SDRAM needs to survive, we load rockbox.yps3 afresh. */
+    ldr     r1, =0x38200000     /* MIUCON */
+    ldr     r0, [r1]
+    orr     r0, r0, #1
+    str     r0, [r1]
+3:
     /* Debug aid: as the very first thing, switch on the LED behind the
        middle button (P4.2) and the backlight (P0.0). If these stay off, the
        image is not being executed from where the boot ROM put it. */

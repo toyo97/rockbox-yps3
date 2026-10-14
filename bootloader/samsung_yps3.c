@@ -878,6 +878,9 @@ static void try_boot(void)
         snprintf(str, sizeof(str), "load: %s", loader_strerror(rc));
         bootlog("%s", str);
         lcd_puts(0, 1, str);
+        /* installed behind the original firmware: tell how to reach it */
+        lcd_puts(0, 3, "Hold switch on and");
+        lcd_puts(0, 4, "restart: original FW");
         lcd_update();
         sleep(2 * HZ);
         lcd_clear_display();
