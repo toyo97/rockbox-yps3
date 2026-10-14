@@ -338,3 +338,4 @@ __pycache__
 # YP-S3 NAND dumps (contain user data, keep local)
 /nanddump
 /yps3-install/
+/utils/s5l8700_dfu/S3*.ROM

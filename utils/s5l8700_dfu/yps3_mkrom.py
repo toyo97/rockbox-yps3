@@ -129,7 +129,9 @@ def check(img, kind=None):
     else:
         raise ImageError("unknown entry point %08x" % e)
     if kind and kind != found:
-        raise ImageError("this is a %s image, expected %s" % (found, kind))
+        art = {"original": "an original", "combined": "a combined"}
+        raise ImageError("expected %s image, this is %s one"
+                         % (art[kind], art[found]))
     f["_kind"] = found
     return f, warn
 
