@@ -68,11 +68,12 @@
 #define CONFIG_LCD LCD_YPS3
 
 /* Define this if your LCD can be enabled/disabled */
-//#define HAVE_LCD_ENABLE
+#define HAVE_LCD_ENABLE
 
 /* Define this if your LCD can be put to sleep. HAVE_LCD_ENABLE
    should be defined as well. */
-//#define HAVE_LCD_SLEEP
+#define HAVE_LCD_SLEEP
+#define HAVE_LCD_SLEEP_SETTING
 
 /* We have button lights */
 #define HAVE_BUTTON_LIGHT

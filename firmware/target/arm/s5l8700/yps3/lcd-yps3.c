@@ -22,6 +22,7 @@
 
 #include "s5l87xx.h"
 #include "lcd.h"
+#include "kernel.h"
 
 /*  LCD driver for the Samsung YP-S3
 
@@ -35,6 +36,8 @@
 
 
 static int lcd_type = 0;
+static bool lcd_on = true;          /* the display shows the frame buffer */
+static bool lcd_powered = true;     /* not in sleep mode */
 
 
 static void lcd_delay(int delay)
@@ -294,6 +297,83 @@ void lcd_init_device(void)
     }
 }
 
+/*  Sleep and wake-up of the type 2 panel, the way the original firmware
+    does it [from OF: panel driver table at 0x087C008C, entry 1; sleep at
+    0x086473F8, wake-up at 0x08647360, register writes via 0x08645204].
+    The OF waits in microseconds (0x08648F8C); sleeping a tick is more than
+    enough. Called from the backlight thread. */
+static void lcd_sleep2(void)
+{
+    lcd_wcmd_data(0x07, 0x0002);
+    lcd_wcmd_data(0x12, 0x0000);
+    sleep(1);                       /* OF: 4000 us */
+    lcd_wcmd_data(0x07, 0x0000);
+    sleep(1);                       /* OF: 4000 us */
+    lcd_wcmd_data(0x10, 0x11B1);    /* standby */
+}
+
+static void lcd_wake2(void)
+{
+    lcd_wcmd_data(0x00, 0x0001);    /* oscillator on */
+    sleep(1);                       /* OF: 500 us */
+    lcd_wcmd_data(0x10, 0x11B0);    /* leave standby */
+    sleep(1);                       /* OF: 2000 us after each of these */
+    lcd_wcmd_data(0x07, 0x0001);
+    sleep(1);
+    lcd_wcmd_data(0x07, 0x0012);
+    sleep(1);
+    lcd_wcmd_data(0x12, 0x1138);
+    sleep(1);
+    lcd_wcmd_data(0x07, 0x0233);
+    sleep(1);
+}
+
+bool lcd_active(void)
+{
+    return lcd_on;
+}
+
+/* deeper than lcd_enable(false): the panel's standby mode; only the
+   (tested) type 2 panel, a type 1 panel just stops being updated */
+void lcd_sleep(void)
+{
+    if (lcd_powered) {
+        lcd_enable(false);
+        if (lcd_type == 2) {
+            lcd_sleep2();
+            lcd_powered = false;
+        }
+    }
+}
+
+/* power the panel up again without showing anything yet (backlight.c
+   calls it before shutting down) */
+void lcd_awake(void)
+{
+    if (!lcd_powered) {
+        lcd_wake2();
+        lcd_powered = true;
+    }
+}
+
+void lcd_enable(bool on)
+{
+    if (on == lcd_on) {
+        return;
+    }
+    if (on) {
+        lcd_awake();
+        lcd_on = true;
+        lcd_update();
+#ifndef BOOTLOADER
+        send_event(LCD_EVENT_ACTIVATION, NULL);
+#endif
+    }
+    else {
+        lcd_on = false;
+    }
+}
+
 /* 1 or 2, valid after lcd_init_device */
 int lcd_yps3_type(void)
 {
@@ -304,6 +384,10 @@ void lcd_update_rect(int x, int y, int width, int height)
 {
     fb_data* p;
     int h, w;
+
+    if (!lcd_on) {
+        return;
+    }
 
     void* (*fbaddr)(int x, int y) = FB_CURRENTVP_BUFFER->get_address_fn;
     if (lcd_type == 1) {

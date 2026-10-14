@@ -23,6 +23,7 @@
 #include "backlight.h"
 #include "backlight-target.h"
 #include "system.h"
+#include "lcd.h"
 
 /*
     Backlight driver using the PWM mode of a hardware timer.
@@ -46,6 +47,9 @@ void backlight_hw_brightness(int brightness)
 
 void backlight_hw_on(void)
 {
+    /* wake the display up first (if it was asleep) */
+    lcd_enable(true);
+
     /* configure backlight pin P0.0 as timer PWM output */
     PCON0 = ((PCON0 & ~(3 << 0)) | (2 << 0));
 
