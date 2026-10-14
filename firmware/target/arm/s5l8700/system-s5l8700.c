@@ -22,8 +22,8 @@
 #include "system.h"
 #include "panic.h"
 #include "system-target.h"
-#ifdef IPOD_NANO2G
 #include "storage.h"
+#ifdef IPOD_NANO2G
 #include "pmu-target.h"
 #endif
 #include "uart-target.h"
