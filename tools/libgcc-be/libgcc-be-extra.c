@@ -130,6 +130,19 @@ s64 __fixdfdi(double a)
     return neg ? -(s64)m : (s64)m;
 }
 
+/* float -> 64 bit integer, through double (exact) */
+u64 __fixunssfdi(float a)
+{
+    return __fixunsdfdi(a);
+}
+
+s64 __fixsfdi(float a)
+{
+    return __fixdfdi(a);
+}
+
 /* run-time ABI names */
 s64 __aeabi_d2lz(double a) __attribute__((alias("__fixdfdi")));
 u64 __aeabi_d2ulz(double a) __attribute__((alias("__fixunsdfdi")));
+s64 __aeabi_f2lz(float a) __attribute__((alias("__fixsfdi")));
+u64 __aeabi_f2ulz(float a) __attribute__((alias("__fixunssfdi")));
