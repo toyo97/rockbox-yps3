@@ -26,8 +26,12 @@
     power the ADC reference is different: a full battery reads ~945.
     The millivolt scales below are estimates from these points (on
     battery ~3.95 mV per count, on USB ~4.4 mV per count). */
-unsigned short battery_level_disksafe = 3500;
-unsigned short battery_level_shutoff = 3450;
+/* Samsung's bootloader refuses to start below raw 910 and powers off at
+   once below 885 (stage 2, 09e34d6c: middle 3 of 5 readings of channel
+   2); the original firmware's lowest level is 898. Shut off there too,
+   so that the battery isn't run down further than Samsung does it. */
+unsigned short battery_level_disksafe = 3560;
+unsigned short battery_level_shutoff = 3550;
 
 /* from the original firmware's levels, 0% = raw 898, 100% = raw 1023 */
 unsigned short percent_to_volt_discharge[11] =
