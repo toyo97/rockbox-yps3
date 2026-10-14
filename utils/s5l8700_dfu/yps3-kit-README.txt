@@ -172,8 +172,13 @@ minute, unplug and plug the cable in again. Then go on with section 6
 Way B, Rockbox on the drive is broken too:
 
   python3 s5l8700_dfu.py run rockboot-dev.ebn
-  (wait 10 seconds)
+  until python3 yps3_nanddump.py info; do sleep 5; done
   python3 yps3_nanddump.py load --addr 0x08000000 --no-reset rockbox.yps3
+
+The second line asks the started loader for its status every 5 seconds
+until it answers; that can take a minute or two (the tool resets the USB
+connection by itself). Stop it with Ctrl+C after 5 minutes and start
+over from DFU mode.
 
 This starts Rockbox from the PC instead of from the drive. Unplug and plug
 the cable in again if no drive appears, then go on with section 6. If
