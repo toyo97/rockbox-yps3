@@ -451,6 +451,7 @@ void ftl_ecc_encode_selftest(void (*logf_fn)(const char *fmt, ...), int pages);
 bool ftl_dma_selftest(void (*logf_fn)(const char *fmt, ...));
 
 static int ftl_init_rc;
+static bool wcache_ready;           /* the write cache, see ftl_write() */
 static void ftl_write_setup(void);
 static char selftest_log[4][80];
 static int selftest_n;
@@ -472,6 +473,7 @@ uint32_t ftl_init(void)
 
     nand_ll_init();
     nand_ll_reset(0);
+    wcache_ready = false;
 
     rc = vfl_open();
     if (rc) {
@@ -751,6 +753,7 @@ static bool ftl_write_failed;
 static uint32_t ftl_write_first, ftl_write_end;   /* writable sectors */
 static uint32_t ftl_age_counter;
 unsigned long ftl_stat_pages, ftl_stat_merges, ftl_stat_cxt, ftl_stat_erases;
+unsigned long ftl_stat_copymerges;
 
 static uint8_t wbuf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
 static uint8_t cbuf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
@@ -1061,6 +1064,68 @@ static int simple_merge(struct ftl_log *log)
     return store_cxt(lbn % FTL_MAP_CHUNKS);
 }
 
+/* _DoCopyMerge, for a log whose page i holds logical page i (written in
+   order, nothing rewritten): the rest of the data block is copied into the
+   log block, which becomes the data block; only the old data block is
+   freed. A log filled in order (a file copy) needs no copying at all.
+   The copied pages carry no transaction end marker, so a power loss in
+   between leaves the log as it was (sudden power off rule). */
+static bool log_in_order(const struct ftl_log *log)
+{
+    unsigned int p;
+
+    if (log->dirty || log->nvalid != log->nfree) {
+        return false;
+    }
+    for (p = 0; p < log->nfree; p++) {
+        if (log->page[p] != p || log->valid[p] != 0xffff) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static int copy_merge(struct ftl_log *log)
+{
+    unsigned int lbn = log->lbn, p;
+    uint16_t dvb = map_get(lbn);
+    uint8_t meta[20];
+    int rc;
+
+    for (p = log->nfree; p < VPAGES_PER_VBLOCK; p++) {
+        rc = vfl_read_vpage(dvb * VPAGES_PER_VBLOCK + p, cbuf, meta);
+        if (rc < 0) {
+            return -42;
+        }
+        if (rc == 1) {
+            continue;           /* blank pages stay blank */
+        }
+        memset(meta, 0x0f, sizeof(meta));
+        put32(meta, p);
+        if (vfl_program(log->vblock * VPAGES_PER_VBLOCK + p, cbuf, 0xffff,
+                        meta)) {
+            return -43;
+        }
+    }
+    add_free_vb(dvb, ec_get(lbn));
+    map_set(lbn, log->vblock, log->ec);
+    log->vblock = LOG_UNUSED;
+    log_init(log);
+    put16(&ftl_hdr[H_WL_STATIC], be16(&ftl_hdr[H_WL_STATIC]) + 1);
+    put16(&ftl_hdr[H_WL_META], be16(&ftl_hdr[H_WL_META]) + 1);
+    ftl_stat_merges++;
+    ftl_stat_copymerges++;
+    return store_cxt(lbn % FTL_MAP_CHUNKS);
+}
+
+static int merge(struct ftl_log *log)
+{
+    if (map_get(log->lbn) < BLOCKS_PER_DIE / 2 && log_in_order(log)) {
+        return copy_merge(log);
+    }
+    return simple_merge(log);
+}
+
 /* _PrepareLog: the log of 'lbn', assigning one if needed */
 static int prepare_log(unsigned int lbn, struct ftl_log **out)
 {
@@ -1097,7 +1162,7 @@ static int prepare_log(unsigned int lbn, struct ftl_log **out)
                 if (!victim) {
                     return -50;
                 }
-                rc = simple_merge(victim);
+                rc = merge(victim);
                 if (rc) {
                     return rc;
                 }
@@ -1142,7 +1207,7 @@ static int write_vpage(unsigned int lbn, unsigned int lpage, const uint8_t *data
     }
     if (log->nfree > VPAGES_PER_VBLOCK - 2 + (lpage & 1)) {
         /* the log is full: merge it and start a new one for this lbn */
-        rc = simple_merge(log);
+        rc = merge(log);
         if (rc) {
             return rc;
         }
@@ -1276,10 +1341,11 @@ void ftl_write_log(void (*logf_fn)(const char *fmt, ...))
 {
     extern int nand_ll_last_status;
     logf_fn("ftl write: en %d failed %d err %d nandst %02x range %lu-%lu "
-            "pages %lu merges %lu cxt %lu erases %lu free %d", ftl_write_enabled,
-            ftl_write_failed, ftl_write_last_error, nand_ll_last_status & 0xff,
-            (unsigned long)ftl_write_first, (unsigned long)ftl_write_end,
-            ftl_stat_pages, ftl_stat_merges, ftl_stat_cxt, ftl_stat_erases,
+            "pages %lu merges %lu (copy %lu) cxt %lu erases %lu free %d",
+            ftl_write_enabled, ftl_write_failed, ftl_write_last_error,
+            nand_ll_last_status & 0xff, (unsigned long)ftl_write_first,
+            (unsigned long)ftl_write_end, ftl_stat_pages, ftl_stat_merges,
+            ftl_stat_copymerges, ftl_stat_cxt, ftl_stat_erases,
             be16(&ftl_hdr[H_NFREE]));
 }
 
@@ -1344,28 +1410,102 @@ int ftl_sim_check(void (*logf_fn)(const char *fmt, ...))
 }
 #endif
 
-/*  One virtual page of write cache: Rockbox writes single sectors (FAT,
-    directory entries), each would cost a whole 8 KiB page in the log. The
-    page is written when another page is written, on ftl_sync() and when
-    the storage goes idle (nand_event). */
+/*  Write cache of a few virtual pages. Rockbox and USB hosts write single
+    sectors (FAT, FSInfo, directory entries) and chunks that don't start on
+    a page; each page written costs a whole 8 KiB page in the log. Pages are
+    written when evicted (least recently used), on ftl_sync() and when the
+    storage goes idle (nand_event). Pages of one logical block are always
+    written in increasing order, so that a file copy leaves its logs in
+    order and they can be merged without copying (copy_merge). */
 #define WCACHE_NONE 0xffffffff
+#define WCACHE_PAGES 4
 unsigned long ftl_write_refused, ftl_write_refused_sector;
 unsigned long ftl_stat_wcalls, ftl_stat_wlast;
 unsigned long ftl_stat_rerr;
 int ftl_stat_rerr_rc;
-static uint32_t cache_sector = WCACHE_NONE;     /* first sector of the page */
-static bool cache_dirty;
-static uint8_t cache_buf[2 * PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
+static struct {
+    uint32_t sector;            /* first sector of the page */
+    bool dirty;
+    unsigned long used;
+} wcache[WCACHE_PAGES];
+static uint8_t wcache_buf[WCACHE_PAGES][2 * PAGE_SIZE]
+    SDRAM_BSS_ATTR __attribute__((aligned(16)));
+static unsigned long wcache_clock;
+
+static void cache_init(void)
+{
+    int i;
+    for (i = 0; i < WCACHE_PAGES; i++) {
+        wcache[i].sector = WCACHE_NONE;
+        wcache[i].dirty = false;
+    }
+    wcache_ready = true;
+}
+
+static int cache_find(uint32_t page)
+{
+    int i;
+    for (i = 0; i < WCACHE_PAGES; i++) {
+        if (wcache[i].sector == page) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static uint32_t cache_write_one(int i)
+{
+    uint32_t rc = 0;
+    if (wcache[i].sector != WCACHE_NONE && wcache[i].dirty) {
+        rc = ftl_write_nand(wcache[i].sector, SECTORS_PER_VPAGE,
+                            wcache_buf[i]);
+        if (rc) {
+            wcache[i].sector = WCACHE_NONE;
+        }
+    }
+    wcache[i].dirty = false;
+    return rc;
+}
+
+/* writes the dirty pages of the logical block of 'page' that come before
+   it (all of them with 'page' = end of the block), lowest first */
+static uint32_t cache_write_below(uint32_t page)
+{
+    uint32_t lblock = page - page % SECTORS_PER_LBLOCK;
+    for (;;) {
+        int i, low = -1;
+        for (i = 0; i < WCACHE_PAGES; i++) {
+            if (wcache[i].dirty && wcache[i].sector >= lblock &&
+                wcache[i].sector < page &&
+                (low < 0 || wcache[i].sector < wcache[low].sector)) {
+                low = i;
+            }
+        }
+        if (low < 0) {
+            return 0;
+        }
+        uint32_t rc = cache_write_one(low);
+        if (rc) {
+            return rc;
+        }
+    }
+}
+
+/* writes a cached page, after the ones before it in its logical block */
+static uint32_t cache_write(int i)
+{
+    uint32_t rc = cache_write_below(wcache[i].sector);
+    return rc ? rc : cache_write_one(i);
+}
 
 static uint32_t cache_flush(void)
 {
     uint32_t rc = 0;
-    if (cache_sector != WCACHE_NONE && cache_dirty) {
-        rc = ftl_write_nand(cache_sector, SECTORS_PER_VPAGE, cache_buf);
-    }
-    cache_dirty = false;
-    if (rc) {
-        cache_sector = WCACHE_NONE;
+    int i;
+    for (i = 0; i < WCACHE_PAGES && !rc; i++) {
+        if (wcache[i].dirty) {
+            rc = cache_write(i);
+        }
     }
     return rc;
 }
@@ -1373,16 +1513,19 @@ static uint32_t cache_flush(void)
 uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
 {
     uint32_t rc;
+    int i;
     FTL_LOCK();
     rc = ftl_read_nand(sector, count, buffer);
-    if (!rc && cache_sector != WCACHE_NONE && cache_dirty &&
-        sector < cache_sector + SECTORS_PER_VPAGE &&
-        sector + count > cache_sector) {
-        uint32_t first = MAX(sector, cache_sector);
-        uint32_t end = MIN(sector + count, cache_sector + SECTORS_PER_VPAGE);
-        memcpy((uint8_t *)buffer + (first - sector) * SECTOR_SIZE,
-               cache_buf + (first - cache_sector) * SECTOR_SIZE,
-               (end - first) * SECTOR_SIZE);
+    for (i = 0; !rc && wcache_ready && i < WCACHE_PAGES; i++) {
+        uint32_t cs = wcache[i].sector;
+        if (cs != WCACHE_NONE && wcache[i].dirty &&
+            sector < cs + SECTORS_PER_VPAGE && sector + count > cs) {
+            uint32_t first = MAX(sector, cs);
+            uint32_t end = MIN(sector + count, cs + SECTORS_PER_VPAGE);
+            memcpy((uint8_t *)buffer + (first - sector) * SECTOR_SIZE,
+                   wcache_buf[i] + (first - cs) * SECTOR_SIZE,
+                   (end - first) * SECTOR_SIZE);
+        }
     }
     FTL_UNLOCK();
     return rc;
@@ -1403,36 +1546,58 @@ uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
         FTL_UNLOCK();
         return 1;
     }
+    if (!wcache_ready) {
+        cache_init();
+    }
     while (count && !rc) {
         uint32_t page = sector - sector % SECTORS_PER_VPAGE;
         uint32_t sec = sector - page;
         uint32_t n = MIN(count, SECTORS_PER_VPAGE - sec);
+        int i = cache_find(page);
 
-        if (cache_sector != page) {
-            rc = cache_flush();
-            if (rc) {
-                break;
-            }
-            if (n == SECTORS_PER_VPAGE) {
-                /* a whole page: straight to the flash */
-                cache_sector = WCACHE_NONE;
+        if (i < 0 && n == SECTORS_PER_VPAGE) {
+            /* a whole page: straight to the flash, after the cached pages
+               before it in its logical block */
+            rc = cache_write_below(page);
+            if (!rc) {
                 rc = ftl_write_nand(page, SECTORS_PER_VPAGE, src);
-                src += n * SECTOR_SIZE;
-                sector += n;
-                count -= n;
-                continue;
             }
-            rc = ftl_read_nand(page, SECTORS_PER_VPAGE, cache_buf);
+            src += n * SECTOR_SIZE;
+            sector += n;
+            count -= n;
+            continue;
+        }
+        if (i < 0) {
+            /* a free slot, or the least recently used page */
+            int j;
+            for (i = 0, j = 1; j < WCACHE_PAGES; j++) {
+                if (wcache[i].sector == WCACHE_NONE) {
+                    break;
+                }
+                if (wcache[j].sector == WCACHE_NONE ||
+                    wcache[j].used < wcache[i].used) {
+                    i = j;
+                }
+            }
+            rc = cache_write(i);
             if (rc) {
-                ftl_stat_rerr++;
-                ftl_stat_rerr_rc = rc;
-                rc = 3;
                 break;
             }
-            cache_sector = page;
+            wcache[i].sector = WCACHE_NONE;
+            if (n < SECTORS_PER_VPAGE) {
+                rc = ftl_read_nand(page, SECTORS_PER_VPAGE, wcache_buf[i]);
+                if (rc) {
+                    ftl_stat_rerr++;
+                    ftl_stat_rerr_rc = rc;
+                    rc = 3;
+                    break;
+                }
+            }
+            wcache[i].sector = page;
         }
-        memcpy(cache_buf + sec * SECTOR_SIZE, src, n * SECTOR_SIZE);
-        cache_dirty = true;
+        memcpy(wcache_buf[i] + sec * SECTOR_SIZE, src, n * SECTOR_SIZE);
+        wcache[i].dirty = true;
+        wcache[i].used = ++wcache_clock;
         src += n * SECTOR_SIZE;
         sector += n;
         count -= n;
@@ -1443,9 +1608,11 @@ uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
 
 uint32_t ftl_sync(void)
 {
-    uint32_t rc;
+    uint32_t rc = 0;
     FTL_LOCK();
-    rc = cache_flush();
+    if (wcache_ready) {
+        rc = cache_flush();
+    }
     FTL_UNLOCK();
     return rc;
 }
@@ -1453,7 +1620,11 @@ uint32_t ftl_sync(void)
 /* called by the storage thread when the NAND has been idle for a while */
 void ftl_idle(void)
 {
-    if (cache_dirty) {
-        ftl_sync();
+    int i;
+    for (i = 0; wcache_ready && i < WCACHE_PAGES; i++) {
+        if (wcache[i].dirty) {
+            ftl_sync();
+            break;
+        }
     }
 }

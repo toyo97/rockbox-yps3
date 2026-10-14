@@ -219,10 +219,12 @@ bool dbg_hw_info(void)
             extern bool ftl_write_enabled;
             extern int ftl_write_last_error;
             extern unsigned long ftl_stat_pages, ftl_stat_merges,
-                ftl_stat_erases, ftl_write_refused, ftl_write_refused_sector;
-            _DEBUG_PRINTF("FTL wr %d err %d pg %lu mrg %lu er %lu",
+                ftl_stat_copymerges, ftl_stat_erases, ftl_write_refused,
+                ftl_write_refused_sector;
+            _DEBUG_PRINTF("FTL wr %d err %d pg %lu mrg %lu/%lu er %lu",
                           ftl_write_enabled, ftl_write_last_error,
-                          ftl_stat_pages, ftl_stat_merges, ftl_stat_erases);
+                          ftl_stat_pages, ftl_stat_merges,
+                          ftl_stat_copymerges, ftl_stat_erases);
             _DEBUG_PRINTF("refused %lu last %lu", ftl_write_refused,
                           ftl_write_refused_sector);
         }
