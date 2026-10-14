@@ -17,13 +17,16 @@ option and choose \setting{mpegplayer}.
     \opt{SAMSUNG_YPS3_PAD}{\ButtonBack}
        \opt{HAVEREMOTEKEYMAP}{& }
     & Stop\\
-    \nopt{GIGABEAT_S_PAD,GIGABEAT_PAD}{\ActionWpsVolUp{} / \ActionWpsVolDown}
+    \nopt{GIGABEAT_S_PAD,GIGABEAT_PAD,SAMSUNG_YPS3_PAD}{\ActionWpsVolUp{} / \ActionWpsVolDown}
+    \opt{SAMSUNG_YPS3_PAD}{\ButtonRight{} / \ButtonLeft}
     \opt{GIGABEAT_S_PAD,GIGABEAT_PAD}{\ButtonLeft{} or  \ButtonVolDown{} /
         \ButtonRight{} or \ButtonVolUp}
        \opt{HAVEREMOTEKEYMAP}{& }
     & Adjust volume up / down\\
-    \nopt{GIGABEAT_S_PAD,GIGABEAT_PAD,SAMSUNG_YH92X_PAD,SAMSUNG_YH820_PAD}{%
+    \nopt{GIGABEAT_S_PAD,GIGABEAT_PAD,SAMSUNG_YH92X_PAD,SAMSUNG_YH820_PAD%
+          ,SAMSUNG_YPS3_PAD}{%
           \ActionWpsSkipPrev{} / \ActionWpsSkipNext}
+    \opt{SAMSUNG_YPS3_PAD}{\ButtonUp{} / \ButtonDown}
     \opt{GIGABEAT_S_PAD,GIGABEAT_PAD}{\ButtonUp{} / \ButtonDown}
     \opt{SAMSUNG_YH92X_PAD,SAMSUNG_YH820_PAD}{\ButtonLeft{} / \ButtonRight}
        \opt{HAVEREMOTEKEYMAP}{& }
@@ -40,6 +43,13 @@ option and choose \setting{mpegplayer}.
     \opt{RG_NANO_PAD}{\ButtonStart}
     & Open the MPEG Player menu\\
 \end{btnmap}
+
+\opt{SAMSUNG_YPS3_PAD}{
+\note{The video is shown turned to fit the screen, with the player held on
+  its side, so the arrow keys are turned with it: \ButtonRight{} and
+  \ButtonLeft{} are up and down on the screen, \ButtonUp{} and
+  \ButtonDown{} are left and right.}
+}
 
 When a video file is selected, the Start Menu will be displayed, unless it is 
 disabled via the \setting{Resume Options} (see below). In the latter case the video 

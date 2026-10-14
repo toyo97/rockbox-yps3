@@ -354,18 +354,26 @@ CONFIG_KEYPAD == SANSA_M200_PAD
 #define MPEG_RW         BUTTON_LEFT
 #define MPEG_FF         BUTTON_RIGHT
 
-#elif (CONFIG_KEYPAD == SAMSUNG_YPR0_PAD || CONFIG_KEYPAD == SAMSUNG_YPS3_PAD)
+#elif CONFIG_KEYPAD == SAMSUNG_YPR0_PAD
 #define MPEG_MENU       BUTTON_MENU
 #define MPEG_PAUSE      BUTTON_SELECT
-#if CONFIG_KEYPAD == SAMSUNG_YPS3_PAD
-#define MPEG_STOP       BUTTON_BACK
-#else
 #define MPEG_STOP       BUTTON_POWER
-#endif
 #define MPEG_VOLDOWN    BUTTON_DOWN
 #define MPEG_VOLUP      BUTTON_UP
 #define MPEG_RW         BUTTON_LEFT
 #define MPEG_FF         BUTTON_RIGHT
+
+#elif CONFIG_KEYPAD == SAMSUNG_YPS3_PAD
+/* The video is shown turned 90 degrees clockwise (the player is held on its
+ * side), so the arrow keys are turned with it: up and down on the screen
+ * are right and left, left and right are up and down. */
+#define MPEG_MENU       BUTTON_MENU
+#define MPEG_PAUSE      BUTTON_SELECT
+#define MPEG_STOP       BUTTON_BACK
+#define MPEG_VOLDOWN    BUTTON_LEFT
+#define MPEG_VOLUP      BUTTON_RIGHT
+#define MPEG_RW         BUTTON_UP
+#define MPEG_FF         BUTTON_DOWN
 
 #elif CONFIG_KEYPAD == HM60X_PAD
 #define MPEG_MENU       BUTTON_POWER
