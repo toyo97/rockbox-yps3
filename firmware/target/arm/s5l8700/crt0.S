@@ -44,17 +44,31 @@ _newstart:
     /* Chain mode: installed behind the original firmware (OF) image in the
        hidden area, Samsung's stage 2 bootloader loads us into SDRAM and
        jumps here (see docs/YPS3-INSTALL-DESIGN.md). Over DFU we run from
-       IRAM and skip all of this. Position independent code only, and
-       nothing may change before the OF decision but ip and the flags. */
+       IRAM and skip all of this. Position independent code only.
+
+       The original firmware is chosen by keeping the power slider pushed
+       until the start animation stops: then we wait for it to be let go
+       and enter the OF with everything else as stage 2 left it (the OF's
+       entry code sets up all registers itself). Power and hold are one
+       slider, and the OF didn't start with hold on. */
     adr     ip, start
     cmp     ip, #0x08000000
     blo     3f                  /* IRAM: started over DFU */
     cmp     ip, #0x0A000000
     bhs     3f
-    ldr     ip, =0x3CF00044     /* PDAT4 */
-    ldr     ip, [ip]
-    tst     ip, #0x8            /* P4.3: hold switch on */
-    ldrne   pc, =0x08001000     /* OF entry, state as stage 2 left it */
+    ldr     r1, =0x3CF00000     /* GPIO base */
+    ldr     r0, [r1, #0x10]     /* PCON1: 4 bits per pin */
+    bic     r0, r0, #0xF        /* P1.0 input: the power slider */
+    str     r0, [r1, #0x10]
+    ldr     r0, [r1, #0x14]     /* PDAT1 */
+    tst     r0, #0x1
+    beq     4f                  /* not pushed: Rockbox */
+2:
+    ldr     r0, [r1, #0x14]     /* wait until it is let go */
+    tst     r0, #0x1
+    bne     2b
+    ldr     pc, =0x08001000     /* OF entry */
+4:
 
     /* Rockbox. Stage 2 may have left the caches and the protection unit
        on: clean the data cache and switch them off before we copy

@@ -28,7 +28,7 @@ bootloader (see "For the owner" below).**
 | FM radio (tuner answers with DEVICEID 0x1B63) | works, scan finds stations |
 | USB mass storage | works, reads ~1.6-1.9 MB/s, writes ~0.56 MB/s |
 | Writing to the flash (music partition) | works |
-| Permanent install (`S3.ROM`, hold switch) | started from SDRAM over DFU only, see below |
+| Permanent install (`S3.ROM`) | works, Rockbox starts on battery |
 | Battery calibration, power off on battery | not done |
 
 ## For the owner: install, go back, rescue
@@ -46,8 +46,9 @@ bootloader (see "For the owner" below).**
   itself is never changed.
 * The scripts only check an image and copy it to the drive as `S3.ROM`.
   Nothing on the player changes until it is switched off and on.
-* After the install, the **hold switch** chooses at power-on:
-  **hold off: Rockbox, hold on: original firmware.**
+* After the install, the player starts Rockbox. For the original firmware,
+  keep the power slider pushed through the whole start animation; when it
+stops on its last frame, let go.
 * DFU mode is built into the player's chip and always works, whatever is
   on the flash. It lets the PC start a program on the player over USB
   without writing anything.
@@ -136,12 +137,13 @@ utils/s5l8700_dfu/yps3-install.sh MUSIC_DRIVE
 
 (defaults: `nanddump/install/S3-combined.ROM` and
 `build-yps3-full/rockbox.zip`, which it unpacks to the drive). Eject,
-unplug, switch off, switch on with hold off. The player writes the new
-firmware, `S3.ROM` disappears and Rockbox starts.
+unplug, switch off, switch on. The player writes the new firmware,
+`S3.ROM` disappears and Rockbox starts.
 
-Daily use: switch on with hold **off** for Rockbox. For the original
-firmware switch on with hold **on**, then move hold off once it has
-started (or its keys stay locked).
+Daily use: switch on as usual for Rockbox. For the original firmware,
+keep the power slider pushed through the whole start animation; when it
+stops on its last frame, let go **[NOT YET TESTED on the player]**. Power and hold are the
+same slider, so the hold position can't be used to choose.
 
 ### 3. Go back to the original firmware
 
@@ -156,7 +158,8 @@ Through Rockbox's USB drive (the normal way):
 Through MTP, when the original firmware starts but Rockbox doesn't
 (tested, October 2026):
 
-1. Start the original firmware (hold on), plug the cable in, and open the
+1. Start the original firmware (power slider pushed through the start
+   animation, see Install), plug the cable in, and open the
    player once in the file manager so that it gets mounted.
 2. `gio mount -l` shows the player's address, like
    `mtp://Samsung_Electronics_Co._Ltd._S3_a73f4368000000cd/`. Its storage
@@ -249,8 +252,8 @@ off and on:
 * check that the file is in the top folder of the music drive, named
   exactly `S3.ROM`, about 25 MB, with no `S3J.ROM` next to it;
 * **[NOT YET TESTED]** the bootloader may only look for updates after the
-  original firmware has been connected to a PC once: start it (hold on),
-  plug it in, unplug, and try again;
+  original firmware has been connected to a PC once: start it, plug it in,
+  unplug, and try again;
 * otherwise stop: nothing has changed and the player works as before.
   `S3.ROM` can stay or be deleted.
 

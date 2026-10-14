@@ -185,24 +185,31 @@ then the `ldr pc` goes to the stub. (The first layout put rockboot at
 `ROM Size = Total Size` would also work but loads 25 MB on every start
 instead of 9 MB.
 
-**Chain stub** (the first instructions of `_newstart` in rockboot's crt0; it
-clobbers only `ip` and the flags):
+**Chain stub** (the first instructions of `_newstart` in rockboot's crt0):
 
 ```
-    ldr   ip, =0x3CF00044      @ PDAT4
-    ldr   ip, [ip]
-    tst   ip, #8               @ P4.3 = hold switch, 1 = on
-    ldrne pc, =0x08001000      @ hold on: original firmware, state untouched
-    b     rockboot_start       @ hold off: Rockbox
+    PCON1 &= ~0xF               @ P1.0 (power slider) input, 4 bits per pin
+    if (PDAT1 & 1) {            @ power slider pushed at the jump
+        while (PDAT1 & 1) ;     @ wait until it is let go
+        ldr pc, =0x08001000     @ original firmware
+    }
+    ...                         @ Rockbox
 ```
 
-* **Hold switch ON at power-up starts the OF; OFF starts Rockbox.** It
-  needs one GPIO read, no I2C, no touch keys, and it leaves every register
-  and memory byte the OF might rely on as stage 2 left them. **[L] PCON4
-  is still an input after stage 2, and stage 2 ignores the hold switch at
-  power-up.** The checks after the no-op upgrade (section 4) cover both.
-  A touch-key choice would need rockboot's I2C driver and would dirty the
-  state before the OF starts.
+* **The power slider pushed through the start animation selects the OF;**
+  the animation stops on its last frame until the slider is let go, then
+  the OF starts with nothing pressed. Otherwise Rockbox. One GPIO, no I2C,
+  no touch keys; only r0/r1 and PCON1's P1.0 field change before the OF
+  (its entry code sets all registers itself, `0x08001000`: CPSR, CP15
+  control = 0xF8, caches invalidated, sp; its GPIO init sets P1.0 to input
+  too, `080e7e30`). Stage 2 never reads the power key (only PDAT1 bit 1,
+  USB), so a long push doesn't switch it off. **[L] the hardware doesn't
+  cut power on a long push either.**
+* The first version used the hold switch (P4.3). On this player power and
+  hold are one slider, and the OF didn't start with hold on (stuck on
+  stage 2's last frame, seen twice); the OF polls hold at run time
+  (`08637a78`, used by `0816ae34`, `08223a94`, `08223c70`) but no start-up
+  wait was found in the code.
 * **rockboot in chain mode** (implemented in `crt0.S`, commit "chain mode
   behind the original firmware"). The normal `rockboot.ebn` is used as is,
   with no separate build:
@@ -221,7 +228,7 @@ clobbers only `ip` and the flags):
      would leave stage 2's clocks (233 MHz), which the drivers don't
      expect.
   4. If `/.rockbox/rockbox.yps3` is missing or fails to load, the
-     bootloader says to switch hold on and restart. It doesn't try to
+     bootloader says how to start the OF instead. It doesn't try to
      start the OF itself. **[L] whether the OF does a full hardware
      init.**
   5. The DFU length word at 0x24 of rockboot is irrelevant here.

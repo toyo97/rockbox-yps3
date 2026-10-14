@@ -37,7 +37,7 @@ echo "$zip unpacked to $mnt"
 copy_image combined "$image" "$mnt"
 next_steps
 cat <<EOF
-  4. With the hold switch OFF the player starts Rockbox, with the hold switch
-     ON it starts the original firmware.
+  4. The player starts Rockbox. For the original firmware keep the power
+     slider pushed through the start animation, let go when it stops.
 To go back to the original firmware only: yps3-restore.sh.
 EOF
