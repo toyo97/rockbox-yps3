@@ -1,0 +1,24 @@
+\def\UseOption{samsungyps3}
+\edef\UseOption{\UseOption,SAMSUNG_YPS3_PAD}
+\edef\UseOption{\UseOption,HAVE_BACKLIGHT}
+\edef\UseOption{\UseOption,HAVE_BUTTON_LIGHTS}
+
+\newcommand{\playerman}{Samsung}
+\newcommand{\playertype}{YP-S3}
+\newcommand{\playerlongtype}{\playertype}
+\newcommand{\dapdisplaywidth}{176}
+\newcommand{\dapdisplayheight}{220}
+\newcommand{\dapdisplaydepth}{16}
+\newcommand{\specimg}{yps3}
+%Used to name the player, e.g. ...to the \dap
+\newcommand{\dap}{player}
+%For use when referring to the player. E.g. the \daps\ capacity ...
+\newcommand{\daps}{player's}
+\newcommand{\originalfirmwarefilename}{\fname{S3.ROM}}
+\newcommand{\firmwarefilename}{\fname{S3.ROM}}
+\newcommand{\firmwareextension}{\fname{ROM}}
+\newcommand{\screenshotsize}{4cm}
+\newcommand{\disk}{flash storage}
+
+% link external keymap file
+\input{platform/keymap-yps3.tex}
