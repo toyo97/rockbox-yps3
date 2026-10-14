@@ -196,7 +196,10 @@ void draw_progressbar(struct gui_wps *gwps, struct skin_viewport* skin_viewport,
     if (pb->type == SKIN_TOKEN_VOLUMEBAR)
     {
         int minvol = sound_min(SOUND_VOLUME);
-        int maxvol = sound_max(SOUND_VOLUME);
+        /* the bar ends at the volume limit, the highest volume allowed */
+        int maxvol = MIN(sound_max(SOUND_VOLUME), global_settings.volume_limit);
+        if (maxvol <= minvol)
+            maxvol = sound_max(SOUND_VOLUME);
 #if defined(HAVE_PERCEPTUAL_VOLUME) || defined(HAVE_TOUCHSCREEN)
         length = 1000;
         end = to_normalized_volume(global_status.volume, minvol, maxvol, length);
