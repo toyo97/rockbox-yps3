@@ -29,6 +29,9 @@
 #include "lcd.h"
 #include "font.h"
 #include "storage.h"
+#include "pcm.h"
+#include "pcm_mixer.h"
+#include "pcm-internal.h"
 #ifdef IPOD_NANO2G
 #include "power.h"
 #include "pmu-target.h"
@@ -199,6 +202,19 @@ bool dbg_hw_info(void)
                           ftl_stat_tmax[0] * 1000 / HZ,
                           ftl_stat_tmax[1] * 1000 / HZ,
                           ftl_stat_tmax[2] * 1000 / HZ, ftl_stat_slow);
+        }
+        {
+            extern unsigned long pcm_dbg_irqs, pcm_dbg_starts, pcm_dbg_stops,
+                pcm_dbg_ends;
+            extern int pcm_dbg_locked(void);
+            _DEBUG_PRINTF("pcm %s%s irq %lu st %lu sp %lu end %lu",
+                          pcm_is_playing() ? "P" : "-",
+                          pcm_is_recording() ? "R" : "-", pcm_dbg_irqs,
+                          pcm_dbg_starts, pcm_dbg_stops, pcm_dbg_ends);
+            _DEBUG_PRINTF("lk %d msk %d dma %08x cnt %x chan %d",
+                          pcm_dbg_locked(), (int)((INTMSK >> 10) & 1),
+                          (unsigned)DMAALLST, (unsigned)DMACTCNT0,
+                          (int)mixer_channel_status(PCM_MIXER_CHAN_PLAYBACK));
         }
 #ifdef HAVE_RECORDING
         {

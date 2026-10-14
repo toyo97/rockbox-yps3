@@ -41,6 +41,12 @@
 */
 
 static volatile int locked = 0;
+
+#ifdef SAMSUNG_YPS3
+/* for the debug screen: playback DMA activity */
+unsigned long pcm_dbg_irqs, pcm_dbg_starts, pcm_dbg_stops, pcm_dbg_ends;
+int pcm_dbg_locked(void) { return locked; }
+#endif
 #ifndef SAMSUNG_YPS3
 static const int zerosample = 0;
 static unsigned char dblbuf[1024] IBSS_ATTR;
@@ -140,9 +146,12 @@ void INT_DMA(void)
     }
 #endif
     DMACOM0 = 7;    /* clear the completion interrupt */
+    pcm_dbg_irqs++;
     if (!nextsize) {
-        if (!pcm_play_dma_complete_callback(PCM_DMAST_OK, &nextbuf, &nextsize))
+        if (!pcm_play_dma_complete_callback(PCM_DMAST_OK, &nextbuf, &nextsize)) {
+            pcm_dbg_ends++;
             return;
+        }
         dma_start_chunk();
         pcm_play_dma_status_callback(PCM_DMAST_STARTED);
         return;
@@ -204,6 +213,7 @@ static void sink_dma_start(const void* addr, size_t size)
     play_active = true;
 #endif
 #ifdef SAMSUNG_YPS3
+    pcm_dbg_starts++;
     DMACOM0 = 7;
     dma_start_chunk();
 #else
@@ -227,6 +237,9 @@ static void sink_dma_stop(void)
 {
     /* DMA channel off */
     DMACOM0 = 5;
+#ifdef SAMSUNG_YPS3
+    pcm_dbg_stops++;
+#endif
 
 #ifdef HAVE_RECORDING
     play_active = false;
