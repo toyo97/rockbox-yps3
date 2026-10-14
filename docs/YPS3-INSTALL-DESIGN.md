@@ -181,22 +181,28 @@ clobbers only `ip` and the flags):
   power-up.** The power-up test in 4.1 checks both. A touch-key choice
   would need rockboot's I2C driver and would dirty the state before the
   OF starts.
-* **rockboot in chain mode**: `crt0.S` already copies the image to its IRAM
-  link address with position-independent code, so it runs from 0x09800000
-  as is. Changes needed:
-  1. A build flag (e.g. `YPS3_CHAIN`) or a run-time test (pc in SDRAM)
-     that skips the first-boot work stage 1 already did. In particular,
-     don't reprogram the SDRAM controller or the PLL in a way that loses
-     refresh. **[L] which steps are safe to repeat** (clock init has been
-     repeated over DFU without trouble; SDRAM init over a running SDRAM
-     hasn't).
-  2. Turn off caches/MPU and mask interrupts first (stage 2 masks them,
-     but the cache and MPU state are unknown).
-  3. If `/.rockbox/rockbox.yps3` is missing or fails to load: show the
-     error and ask to switch the hold switch on and restart. Starting the
-     OF from inside rockboot after it took over IRAM and clocks isn't
-     known to work. **[L] whether the OF does a full hardware init.**
-  4. The DFU length word at 0x24 of rockboot is irrelevant here.
+* **rockboot in chain mode** (implemented in `crt0.S`, commit "chain mode
+  behind the original firmware"). The normal `rockboot.ebn` is used as is,
+  with no separate build:
+  1. **Detected at run time**: `_newstart` checks where it runs. From IRAM
+     (DFU) nothing changes. From SDRAM (0x08000000-0x09FFFFFF) it is chain
+     loaded, and the stub above runs first, written in crt0 itself.
+  2. Rockbox path: IRQ/FIQ off, data cache cleaned, caches and MPU off,
+     icache/dcache flushed. Only then does the existing self-copy to IRAM
+     run and jump there; with stage 2's caches still on, that copy could
+     go stale. MIUCON bit 0 is then set (IRAM at 0 for the vectors, as
+     after DFU). **[L] that stage 2 leaves it otherwise.**
+  3. **PLL and SDRAM are set up again, as after DFU.** This is deliberate:
+     the code runs from IRAM by then, and nothing in SDRAM has to survive
+     because the OF is no longer needed and `rockbox.yps3` is loaded
+     afresh. The values are the ones stage 1 itself uses. Skipping them
+     would leave stage 2's clocks (233 MHz), which the drivers don't
+     expect.
+  4. If `/.rockbox/rockbox.yps3` is missing or fails to load, the
+     bootloader says to switch hold on and restart. It doesn't try to
+     start the OF itself. **[L] whether the OF does a full hardware
+     init.**
+  5. The DFU length word at 0x24 of rockboot is irrelevant here.
      `Total Size` covers the whole appended part.
 * The OF sees a different `Total Size` and entry literal in its RAM copy of
   the header, plus extra bytes above its image. **[L] the OF doesn't read
@@ -247,16 +253,18 @@ check runs, and a restore works.
 
 ### 4.2 Install
 
-1. Build rockboot in chain mode, then
-   `yps3_mkrom.py combine S3-original.ROM rockboot.bin S3.ROM` (fixes the
+1. `yps3_mkrom.py combine S3-original.ROM rockboot.ebn S3-combined.ROM`
+   (fixes the
    entry literal, `Total Size` and `Check Sum`, refuses sizes over the
    limit, checks the result by parsing it back).
 2. Test the combined image over DFU first: development bootloader,
-   `yps3_nanddump.py load --addr 0x08000000 S3.ROM` with the jump at
-   0x08000000. This is not the exact stage 2 hand-over state, but it
+   `yps3_nanddump.py load --addr 0x08000000 --no-reset S3-combined.ROM`
+   (jumps to 0x08000000, then the `ldr pc` goes to 0x09800000, so the
+   chain path runs). **[L] the upload size limit of the development
+   bootloader (25 MB).** This is not the exact stage 2 hand-over state, but it
    catches layout and stub bugs. Try with hold on and off.
-3. Copy `.rockbox` and `S3.ROM` to the music drive, eject, restart.
-   Stage 2 installs it.
+3. `yps3-install.sh MUSIC_DRIVE S3-combined.ROM rockbox.zip`, then eject
+   and restart. Stage 2 installs it.
 4. Check: hold off starts Rockbox, hold on starts the OF. Read areas 1/4
    back and compare with `S3.ROM`.
 
