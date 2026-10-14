@@ -125,9 +125,8 @@ changes, but it proves that the player takes `S3.ROM` from the drive.
 3. Eject, unplug the cable, switch off (hold the power switch until the
    screen goes dark), switch on.
 4. The player shows a short upgrade screen, then the original firmware
-   starts. `S3.ROM` should then be gone from the drive **[NOT YET
-   CHECKED]**. If the original firmware doesn't start after the upgrade
-   screen, see "When S3.ROM stays".
+   starts, and `S3.ROM` is gone from the drive. If the original firmware
+   doesn't start after the upgrade screen, see "When S3.ROM stays".
 
 ### 2. Install
 
@@ -156,7 +155,8 @@ Through Rockbox's USB drive (the normal way):
 
 Through MTP, when the original firmware starts but Rockbox doesn't
 **[NOT YET TESTED: whether the bootloader sees a file copied through the
-original firmware's MTP mode]**:
+original firmware's MTP mode; the MTP listing does show the drive's top
+folder, with `.rockbox`, so it looks likely]**:
 
 1. Start the original firmware (hold on), plug the cable in.
 2. `gio mount -l` shows the player's `mtp://` address; `gio list
@@ -229,8 +229,7 @@ music), so a very broken drive may already be repaired after a restart.
 The player shows a short upgrade screen, then starts the new firmware
 (seen with the original firmware, October 2026). Charge the battery
 first, unplug the cable, and don't switch off until a firmware has
-started. Afterwards `S3.ROM` should be gone from the drive **[NOT YET
-CHECKED]**.
+started. Afterwards `S3.ROM` is gone from the drive (checked).
 
 If there was no upgrade screen and `S3.ROM` is still there after switching
 off and on:

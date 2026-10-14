@@ -283,10 +283,12 @@ Developer checks, read only, with the development bootloader:
 
 1. Answered by the no-op upgrade (October 2026): the upgrade check runs,
    `/a/` is the music partition (MBR partition 0), `S3.ROM` with `FWOK`
-   cleared is accepted, and the OF starts after a short upgrade screen.
-   Still open: whether config word 2 stays 1 (the OF might clear it),
-   whether `S3.ROM` is deleted afterwards, and which of `S3.ROM` /
-   `S3J.ROM` is tried first (decompiled lengths 11/12 bytes).
+   cleared is accepted, the OF starts after a short upgrade screen, and
+   `S3.ROM` is deleted afterwards (the OF's MTP listing of the drive's top
+   folder, which also shows `.rockbox`, no longer has it). Still open:
+   whether config word 2 stays 1 (the OF might clear it), which of
+   `S3.ROM` / `S3J.ROM` is tried first (decompiled lengths 11/12 bytes),
+   and whether a file copied over the OF's MTP is picked up.
 3. Fast path or checked path at boot: the 0x1F0/0x1F1 offsets in
    `09e0179c`. Disassemble `09e0179c` to confirm.
 4. Cache/MPU state at the jump (`09e3517c`), and which rockboot init steps
