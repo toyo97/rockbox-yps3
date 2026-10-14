@@ -183,12 +183,14 @@ bool dbg_hw_info(void)
                       charging_state() ? "yes" : "no");
         _DEBUG_PRINTF("CPU: %ld MHz", cpu_frequency / 1000000);
         {
-            extern unsigned long tkey_words, tkey_bad;
+            extern unsigned long tkey_words, tkey_bad, tkey_multi;
             extern int tkey_hist[8];
-            _DEBUG_PRINTF("tkey n %lu bad %lu btn %03x", tkey_words, tkey_bad,
-                          button_status());
+            _DEBUG_PRINTF("tkey n %lu bad %lu multi %lu btn %03x", tkey_words,
+                          tkey_bad, tkey_multi, button_status());
             _DEBUG_PRINTF("%05x %05x %05x %05x", tkey_hist[0], tkey_hist[1],
                           tkey_hist[2], tkey_hist[3]);
+            _DEBUG_PRINTF("%05x %05x %05x %05x", tkey_hist[4], tkey_hist[5],
+                          tkey_hist[6], tkey_hist[7]);
         }
 #ifdef HAVE_USBSTACK
         {

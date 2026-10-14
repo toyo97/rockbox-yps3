@@ -63,26 +63,69 @@ void button_init_device(void)
     PCON4 &= ~0x0000F000;
 }
 
-/* returns the raw 20-bit word from the touch key controller */
-/* for the debug screen */
-unsigned long tkey_words, tkey_bad;
-int tkey_hist[8];
+/*  Touch key words seen on the hardware: 0xA4001 with one bit per key
+    (9 BACK, 8 UP, 7 MENU, 6 LEFT, 5 SELECT, 4 RIGHT, 3 DOWN) and bit 1 set
+    when an odd number of keys is touched. One word per touch and release.
+    Neighbouring pads often register together (UP with BACK or MENU,
+    SELECT with a direction), which gives button combinations no keymap
+    knows. Such words are resolved to one key:
+    * a key that was already held alone stays the key while others join;
+    * otherwise SELECT wins, then the directions (UP, DOWN, LEFT, RIGHT),
+      then MENU and BACK: the d-pad is what gets pressed most and what
+      fingers drift onto, BACK and MENU sit in the corners next to UP.
+    POWER is a separate switch and combines with any touch key. */
+#define TKEY_KEYS       0x3f8           /* bits 9..3 */
+#define TKEY_PARITY     0x002
+#define TKEY_FIXED      0xa4001         /* the other bits */
 
+static const struct {
+    int bit, button;
+} tkey_map[] = {        /* in order of preference */
+    { 1 << 5, BUTTON_SELECT },
+    { 1 << 8, BUTTON_UP },
+    { 1 << 3, BUTTON_DOWN },
+    { 1 << 6, BUTTON_LEFT },
+    { 1 << 4, BUTTON_RIGHT },
+    { 1 << 7, BUTTON_MENU },
+    { 1 << 9, BUTTON_BACK },
+};
+#define TKEY_NUM (int)(sizeof(tkey_map) / sizeof(tkey_map[0]))
+
+/* for the debug screen: words received, rejected, resolved multi-touch
+   words, and the last words, newest first */
+unsigned long tkey_words, tkey_bad, tkey_multi;
+int tkey_hist[8];
+static int tkey_button;                 /* the resolved key */
+
+/* waits for DRDY to reach 'level'; false after a few milliseconds (the
+   controller's bit rate isn't known, it used to be waited for forever) */
+static bool tkey_wait(unsigned int level)
+{
+    int timeout = 200000;
+    while (((PDAT1 >> 6) & 1) != level) {
+        if (--timeout == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* reads a 20-bit word if the controller has one, -1 otherwise */
 static int tkey_read(void)
 {
-    static int value = 0;
+    int value = 0;
     int i;
 
     /* check activity */
     if (PDAT1 & (1 << 6)) {
-        return value;
+        return -1;
     }
 
-    /* get key bits */
-    value = 0;
     for (i = 0; i < 10; i++) {
         /* sample bit from falling edge of DRDY */
-        while ((PDAT1 & (1 << 6)) != 0);
+        if (!tkey_wait(0)) {
+            break;
+        }
         value <<= 1;
         if (PDAT1 & (1 << 5)) {
             value |= 1;
@@ -92,7 +135,10 @@ static int tkey_read(void)
         PDAT3 &= ~(1 << 4);
 
         /* sample bit from rising edge of DRDY */
-        while ((PDAT1 & (1 << 6)) == 0);
+        if (!tkey_wait(1)) {
+            PDAT3 |= (1 << 4);
+            break;
+        }
         value <<= 1;
         if (PDAT1 & (1 << 5)) {
             value |= 1;
@@ -102,7 +148,6 @@ static int tkey_read(void)
         PDAT3 |= (1 << 4);
     }
 
-    /* debug: the last words received, newest first */
     tkey_words++;
     for (i = 7; i > 0; i--) {
         tkey_hist[i] = tkey_hist[i - 1];
@@ -111,11 +156,54 @@ static int tkey_read(void)
     return value;
 }
 
+static bool tkey_valid(int word)
+{
+    if ((word & ~(TKEY_KEYS | TKEY_PARITY)) != TKEY_FIXED) {
+        return false;
+    }
+    /* parity: bit 1 is set for an odd number of keys */
+    int keys = word & TKEY_KEYS, odd = 0;
+    while (keys) {
+        odd ^= 1;
+        keys &= keys - 1;
+    }
+    return odd == !!(word & TKEY_PARITY);
+}
+
+static void tkey_update(void)
+{
+    int word = tkey_read();
+    int i, n = 0, button = 0;
+
+    if (word < 0) {
+        return;
+    }
+    if (!tkey_valid(word)) {
+        tkey_bad++;             /* keep the previous state */
+        return;
+    }
+    for (i = 0; i < TKEY_NUM; i++) {
+        if (word & tkey_map[i].bit) {
+            if (n++ == 0) {
+                button = tkey_map[i].button;
+            }
+            if (tkey_map[i].button == tkey_button) {
+                button = tkey_button;   /* already held: keep it */
+            }
+        }
+    }
+    if (n > 1) {
+        tkey_multi++;
+    }
+    tkey_button = button;
+}
 
 int button_read_device(void)
 {
     int buttons = 0;
-    int tkey_data;
+
+    /* touch keys: read the words even on hold, to stay in step */
+    tkey_update();
 
     /* hold switch */
     if (button_hold()) {
@@ -126,32 +214,7 @@ int button_read_device(void)
     if (PDAT1 & (1 << 0)) {
         buttons |= BUTTON_POWER;
     }
-    
-    /* touch keys */
-    tkey_data = tkey_read();
-    if (tkey_data & (1 << 9)) {
-        buttons |= BUTTON_BACK;
-    }
-    if (tkey_data & (1 << 8)) {
-        buttons |= BUTTON_UP;
-    }
-    if (tkey_data & (1 << 7)) {
-        buttons |= BUTTON_MENU;
-    }
-    if (tkey_data & (1 << 6)) {
-        buttons |= BUTTON_LEFT;
-    }
-    if (tkey_data & (1 << 5)) {
-        buttons |= BUTTON_SELECT;
-    }
-    if (tkey_data & (1 << 4)) {
-        buttons |= BUTTON_RIGHT;
-    }
-    if (tkey_data & (1 << 3)) {
-        buttons |= BUTTON_DOWN;
-    }
-    
-    return buttons;
+    return buttons | tkey_button;
 }
 
 bool button_hold(void)
