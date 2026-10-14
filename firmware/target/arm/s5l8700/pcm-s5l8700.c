@@ -287,6 +287,12 @@ static void sink_dma_init(void)
 #ifdef IPOD_NANO2G
     PCON5 = (PCON5 & ~(0xFFFF0000)) | 0x77720000;
     PCON6 = (PCON6 & ~(0x0F000000)) | 0x02000000;
+#elif defined(SAMSUNG_YPS3)
+    /* P7.2-P7.6 for the I2S, and P7.7 an output driven low, as the original
+       firmware's board set-up has them [from OF: 0x080E81AC]. P7.7 is not
+       documented; recordings were all zeros while it was left floating. */
+    PCON7 = (PCON7 & ~(0xFFFFFF00)) | 0x12222200;
+    PDAT7 &= ~(1 << 7);
 #else
     PCON7 = (PCON7 & ~(0x0FFFFF00)) | 0x02222200;
 #endif
