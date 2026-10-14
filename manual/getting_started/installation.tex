@@ -193,6 +193,10 @@ of before installing.
     simultaneously. Your \dap{} should enter disk mode and you can try
     reconnecting to the computer.
   }
+  \opt{samsungyps3}{
+    Only Rockbox makes the \dap{} appear as a drive. The original firmware
+    connects as an MTP device instead.
+  }
   \opt{iaudiox5}{
     When instructed to connect/disconnect the USB cable, always use
     the USB port through the subpack, not the side `USB Host' port. The side port
@@ -279,7 +283,7 @@ of before installing.
 \end{description}
 }
 
-\nopt{rgnano}{
+\nopt{rgnano,samsungyps3}{
   \subsection{Storage/Capacity Limits}
 }
 
@@ -335,7 +339,7 @@ It is also worth noting that data transfer rates are not likely to be improved w
 }
 
 \section{Installing Rockbox}\label{sec:installing_rockbox}\index{Installation}
-\nopt{rgnano}{
+\nopt{rgnano,samsungyps3}{
   There are two ways to install Rockbox: automated and manual. The automated
   way is the preferred method of installing Rockbox for the majority of
   people. Rockbox Utility is a graphical application that does almost everything
@@ -372,6 +376,8 @@ It is also worth noting that data transfer rates are not likely to be improved w
     which need to be installed in order to run Rockbox:}
   \opt{rgnano}{There is one main component which needs to be
     installed in order to run Rockbox:}
+  \opt{samsungyps3}{There are three separate components,
+    two of which need to be installed in order to run Rockbox:}
 
 \begin{description}
 \opt{HAVE_RB_BL_ON_DISK}{
@@ -408,6 +414,26 @@ It is also worth noting that data transfer rates are not likely to be improved w
   located in the root of your \daps{} drive.
 }
 
+\opt{samsungyps3}{
+\item[The \playerman{} bootloader.]
+  The \playerman{} bootloader starts the firmware of your \dap{}. When it
+  finds a firmware image called \fname{S3.ROM} on the music drive at
+  power-on, it writes it as the new firmware. It comes factory-installed and
+  is never changed by Rockbox.
+
+\item[The Rockbox bootloader.] \index{Bootloader}
+  The Rockbox bootloader loads and starts the Rockbox firmware. It is
+  installed together with the original firmware as one firmware image, which
+  the \playerman{} bootloader writes from \fname{S3.ROM}. The original
+  firmware stays usable next to Rockbox (see \reference{ref:Dualboot}).
+
+\item[The Rockbox firmware.]
+  Most of the Rockbox code is contained in a ``build'' that resides on the
+  music drive of your \dap{}. This makes it easy to update Rockbox. The build
+  consists of a directory called \fname{.rockbox} which contains all of the
+  Rockbox files, and is located in the top folder of the music drive.
+}
+
 \opt{rgnano}{
 \item[The Rockbox application.]
 All of the Rockbox code is contained in an .opk file. This makes it easy to
@@ -430,6 +456,7 @@ in installing.
     the look of Rockbox.
 \end{description}
 
+\nopt{samsungyps3}{
 \subsection{Automated Installation}
 
 \opt{gigabeats,ondavx777,fiiom3k,shanlingq1,erosqnative}{
@@ -818,6 +845,9 @@ on voice settings.
 Rockbox Utility can also aid in the production of talk files, which allow Rockbox
 to speak file and folder names.
 
+} % \nopt{samsungyps3}
+\opt{samsungyps3}{\input{getting_started/samsungyps3_install.tex}}
+
 \section{Running Rockbox}
 \nopt{ipod,gigabeats,cowond2,rgnano}{When
 you turn the unit on, Rockbox should load.}
@@ -868,16 +898,22 @@ you turn the unit on, Rockbox should load.}
 
 \section{Updating Rockbox}
 
-\nopt{erosqnative}{
+\nopt{erosqnative,samsungyps3}{
 Rockbox can be easily updated with Rockbox Utility. You can also update Rockbox
 }
 \opt{erosqnative}{
 The Native Port to \playername{} is not supported by Rockbox Utility yet, so Rockbox Utility cannot update it.
 Rockbox is easily updated
 }
+\nopt{samsungyps3}{
 manually -- download a Rockbox build
 as detailed above, and unzip the build to the root directory
-of your \dap{} as in the manual installation stage. If your unzip
+of your \dap{} as in the manual installation stage.}
+\opt{samsungyps3}{
+Rockbox Utility does not support the \playertype. To update Rockbox, build a
+newer \fname{rockbox.zip} with \fname{make zip} and unzip it to the top folder
+of the music drive, as \fname{yps3-install.sh} does.}
+If your unzip
 program asks you whether to overwrite files, choose the ``Yes to all'' option.
 The new build will be installed over your current build.\\
 
@@ -894,7 +930,7 @@ The bootloader only changes rarely, and should not normally
 need to be updated.\\
 }
 
-\nopt{erosqnative}{
+\nopt{erosqnative,samsungyps3}{
 \note{If you use Rockbox Utility be aware that it cannot detect manually
         installed components.\\}
 }
@@ -912,9 +948,9 @@ need to be updated.\\
 }
 
 \subsection{Automatic Uninstallation}
-\opt{gigabeats,erosqnative,rgnano}{\note{Rockbox can only be uninstalled manually from the \playername{} for now.}}
+\opt{gigabeats,erosqnative,rgnano,samsungyps3}{\note{Rockbox can only be uninstalled manually from the \playername{} for now.}}
 
-\nopt{erosqnative,rgnano}{
+\nopt{erosqnative,rgnano,samsungyps3}{
   You can uninstall Rockbox automatically by using Rockbox Utility. If you
   installed Rockbox manually you can still use Rockbox Utility for uninstallation
   but will not be able to do this selectively.
@@ -925,6 +961,8 @@ the fact that it requires a flashing procedure. To uninstall the bootloader
 completely follow the manual uninstallation instructions below.}}
 
 \subsection{Manual Uninstallation}
+
+\opt{samsungyps3}{\input{getting_started/samsungyps3_uninstall.tex}}
 
 \opt{iriverh10,iriverh10_5gb,mrobe100,vibe500,samsungyh}{
   If you would like to go back to using the original \playerman{} software,
@@ -1020,7 +1058,7 @@ completely follow the manual uninstallation instructions below.}}
     \end{enumerate}
 }
 
-\nopt{gigabeats,rgnano}{
+\nopt{gigabeats,rgnano,samsungyps3}{
   If you wish to clean up your disk, you may also wish to delete the
   \fname{.rockbox} directory and its contents.
   \nopt{iaudiom3,iaudiom5,iaudiox5,fiiom3k,shanlingq1}{
@@ -1102,14 +1140,18 @@ completely follow the manual uninstallation instructions below.}}
     \opt{iriverh100,iriverh300,mpiohd200}{``$-1$ error''}
     from the bootloader, then the bootloader cannot find the Rockbox firmware.
     This is usually a result of not extracting the contents of the \fname{.zip}
-    file to the proper location\nopt{erosqnative}{, and should not happen when Rockbox has been
+    file to the proper location\nopt{erosqnative,samsungyps3}{, and should not happen when Rockbox has been
     installed with Rockbox Utility.}\opt{erosqnative}{. It could also be due to the SD card
     not being formatted correctly to FAT32.}
 
-    \nopt{erosqnative}{
+    \nopt{erosqnative,samsungyps3}{
     To fix this, either install Rockbox with the Rockbox Utility which will take care
     of this for you, or recheck the Manual Install section to see where the files
     need to be located.
+    }
+    \opt{samsungyps3}{
+    To fix this, unzip \fname{rockbox.zip} to the top folder of the music
+    drive again, so that the drive has \fname{.rockbox/rockbox.yps3}.
     }
     \opt{erosqnative}{
       To fix this, ensure that the SD card is formatted to FAT32 (the original firmware

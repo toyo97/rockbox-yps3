@@ -1,0 +1,134 @@
+% Installation on the Samsung YP-S3. Summary of "For the owner: install, go
+% back, rescue" in YPS3-PORT.md, which has the exact commands.
+\subsection{Installing Rockbox on the \playertype}
+
+\warn{The \playertype{} port is experimental. Rockbox Utility does not support
+it and there are no builds for it on the Rockbox website: you build Rockbox
+from the source tree that contains this port. Not all of the steps below
+have been tried on a player yet; the steps marked \emph{[NOT YET TESTED]} in
+\fname{YPS3-PORT.md} are unverified.}
+
+The exact procedure, with all commands, is in the file \fname{YPS3-PORT.md}
+in the top folder of the source tree, in the section ``For the owner:
+install, go back, rescue''. This section summarises it. All commands run
+from the top of the source tree on a Linux PC with Python~3, pyusb,
+dosfstools and gio.
+
+\subsubsection{How it works}
+\begin{itemize}
+  \item The \daps{} own bootloader looks for a file called
+    \fname{S3.ROM} in the top folder of the music drive every time it is
+    switched on. If it finds one, it checks it, writes it as the firmware,
+    deletes it and starts it. Installing Rockbox and going back to the
+    original firmware both work this way. The \playerman{} bootloader itself
+    is never changed.
+  \item The scripts \fname{yps3-install.sh} and \fname{yps3-restore.sh} in
+    \fname{utils/s5l8700\_dfu/} only check an image and copy it to the drive
+    as \fname{S3.ROM}. Nothing on the \dap{} changes until it
+    is switched off and on.
+  \item The image that installs Rockbox contains both the original firmware
+    and the Rockbox bootloader. After the install, the \dap{} starts Rockbox.
+    For the original firmware, keep the \ButtonPower{} slider pushed through
+    the whole start animation; when it stops on its last frame, let go (see
+    \reference{ref:Dualboot}).
+  \item DFU mode is built into the \daps{} chip and always works, whatever is
+    on the flash. It lets the PC start a program on the \dap{} over USB without
+    writing anything (see \reference{ref:yps3_rescue}).
+\end{itemize}
+
+\subsubsection{What you need}
+\begin{description}
+  \item[A backup of the \daps{} flash.] It is made with
+    \fname{utils/s5l8700\_dfu/yps3\_backup.py} and kept in
+    \fname{nanddump/backup/}. The file \fname{hidden\_area\_ecc.img} in it is
+    the only copy of the original firmware, so keep a copy of the directory
+    somewhere other than your PC.
+  \item[The builds.] The Rockbox bootloader (\fname{rockboot.ebn}, in the
+    build directory \fname{build-yps3}) and the main Rockbox build
+    (\fname{rockbox.zip}, made with \fname{make zip} in
+    \fname{build-yps3-full}).
+  \item[The images.] \fname{utils/s5l8700\_dfu/yps3\_mkrom.py extract}
+    takes the original firmware out of the backup as
+    \fname{S3-original.ROM}; it checks the image against the checksum stored
+    in it. \fname{yps3\_mkrom.py combine} puts it together with
+    \fname{rockboot.ebn} as \fname{S3-combined.ROM}, the image that installs
+    Rockbox. An official \playerman{} \fname{S3.ROM} for the \playertype{}
+    can replace \fname{S3-original.ROM}. \fname{yps3\_mkrom.py info FILE}
+    shows what an image is.
+\end{description}
+
+\subsubsection{The music drive}
+When Rockbox is connected to a computer by USB, it shows its USB screen and
+the \dap{} appears as a drive: the partition of about 3.7~GB on a 4~GB
+\dap{}. This is the music drive that the scripts are given. As a safety net
+against picking another disk, they refuse anything under 512~MB. The
+original firmware shows no drive, only an MTP device. Before Rockbox is
+installed, get the music drive by starting Rockbox over USB in DFU mode (see
+\reference{ref:yps3_rescue}).
+
+\subsubsection{Installation}
+Charge the battery first. While the \dap{} writes a new firmware, keep the
+cable unplugged and don't switch it off until a firmware has started.
+\begin{enumerate}
+  \item Once, before installing, write the original firmware over itself:
+    run \fname{yps3-restore.sh MUSIC\_DRIVE}, then eject
+    the drive, unplug the cable, switch the \dap{} off (hold \ButtonPower{}
+    until the screen goes dark) and on. The \dap{} shows a short upgrade
+    screen, the original firmware starts, and \fname{S3.ROM} is gone from the
+    drive. Nothing changes, but this proves that the \dap{} takes
+    \fname{S3.ROM} from the drive, which is also the way back.
+  \item Get the music drive again and run
+    \fname{yps3-install.sh MUSIC\_DRIVE}. It checks
+    \fname{S3-combined.ROM}, unpacks \fname{rockbox.zip} to the drive
+    (the \fname{.rockbox} directory) and copies the image to the drive as
+    \fname{S3.ROM}.
+  \item Eject the drive, unplug the cable, switch the \dap{} off and on. The
+    \dap{} writes the new firmware, \fname{S3.ROM} disappears and Rockbox
+    starts. With Rockbox installed the start animation takes longer than
+    before, because the \playerman{} bootloader loads the whole 25~MB image
+    instead of 9~MB.
+\end{enumerate}
+
+\subsubsection{When \fname{S3.ROM} stays}
+If there was no upgrade screen and \fname{S3.ROM} is still on the drive after
+switching off and on:
+\begin{itemize}
+  \item make sure the \dap{} was really off and the cable unplugged;
+  \item check that the file is in the top folder of the music drive, named
+    exactly \fname{S3.ROM}, about 25~MB, with no \fname{S3J.ROM} next to it;
+  \item \emph{[NOT YET TESTED]} the \playerman{} bootloader may only look for
+    updates after the original firmware has been connected to a computer
+    once: start it, plug it in, unplug, and try again;
+  \item otherwise stop: nothing has changed and the \dap{} works as before.
+    \fname{S3.ROM} can stay or be deleted.
+\end{itemize}
+
+\subsubsection{\label{ref:yps3_rescue}Rescue: nothing starts (DFU mode)}
+To enter DFU mode:
+\begin{enumerate}
+  \item Plug the USB cable in.
+  \item Hold the \ButtonPower{} slider down and keep holding it.
+  \item Press a pin into the reset hole for 1--2 seconds, then release the pin.
+  \item Wait a moment, then release \ButtonPower{}. If both are released
+    almost together, the \dap{} starts its firmware normally instead; try
+    again and wait a little longer before letting go of \ButtonPower{}.
+\end{enumerate}
+The screen stays dark. \fname{s5l8700\_dfu.py list} (in \fname{utils/s5l8700\_dfu/})
+must show \fname{0419:0145 Samsung YP-S3}. Then:
+\begin{description}
+  \item[Rockbox on the drive is fine.]
+    \fname{s5l8700\_dfu.py run build-yps3/rockboot.ebn} starts the Rockbox
+    bootloader, which starts Rockbox from the drive.
+  \item[Rockbox on the drive is broken too.] Start the bootloader from
+    \fname{build-yps3-dev} the same way, then load \fname{rockbox.yps3}
+    from the PC with \fname{yps3\_nanddump.py}. See
+    \fname{YPS3-PORT.md} for the commands.
+\end{description}
+Then go back to the original firmware (see \reference{ref:yps3_uninstall}) or
+install again. Starting a program over DFU writes nothing; switching off
+brings the \dap{} back to how it was.
+
+If the music drive can't be mounted or shows errors, \fname{YPS3-PORT.md}
+describes how to repair it with \fname{fsck.vfat} and, only as a last resort,
+how to reformat it, which erases all music and \fname{.rockbox} on the
+\dap{}.
