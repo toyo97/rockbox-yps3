@@ -333,7 +333,11 @@ static void setoptions (void)
         options.A      = BUTTON_SELECT;
         options.B      = BUTTON_BACK;
         options.START  = BUTTON_POWER;
+#if CONFIG_KEYPAD == SAMSUNG_YPS3_PAD
+        options.SELECT = BUTTON_NONE; /* no key left */
+#else
         options.SELECT = BUTTON_USER;
+#endif
         options.MENU   = BUTTON_MENU;
 
 #elif CONFIG_KEYPAD == HM801_PAD

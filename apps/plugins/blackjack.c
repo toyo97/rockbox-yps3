@@ -394,7 +394,11 @@ enum {
 #define BJACK_SELECT_NAME   "SELECT"
 #define BJACK_STAY_NAME     "MENU"
 #define BJACK_QUIT_NAME     "BACK"
+#if CONFIG_KEYPAD == SAMSUNG_YPS3_PAD
+#define BJACK_DOUBLE_NAME   "POWER"
+#else
 #define BJACK_DOUBLE_NAME   "USER"
+#endif
 #define BJACK_SELECT        BUTTON_SELECT
 #define BJACK_QUIT          BUTTON_BACK
 #define BJACK_MAX           (BUTTON_LEFT|BUTTON_UP)

@@ -505,13 +505,24 @@ CONFIG_KEYPAD == MROBE500_PAD
 #   define SOL_RIGHT        BUTTON_RIGHT
 #   define SOL_MOVE_PRE     BUTTON_SELECT
 #   define SOL_MOVE         (BUTTON_SELECT | BUTTON_REL)
+#if CONFIG_KEYPAD == SAMSUNG_YPS3_PAD
+#   define SOL_DRAW_PRE     BUTTON_MENU
+#   define SOL_DRAW         (BUTTON_MENU | BUTTON_REL)
+#   define SOL_REM2CUR_PRE  BUTTON_MENU
+#   define SOL_REM2CUR      (BUTTON_MENU | BUTTON_REPEAT)
+#else
 #   define SOL_DRAW         BUTTON_MENU
 #   define SOL_REM2CUR      (BUTTON_USER | BUTTON_REPEAT)
+#endif
 #   define SOL_CUR2STACK    (BUTTON_SELECT | BUTTON_REPEAT)
 #   define SOL_REM2STACK    BUTTON_POWER
 #   define HK_MOVE         "Select"
 #   define HK_DRAW         "Menu"
+#if CONFIG_KEYPAD == SAMSUNG_YPS3_PAD
+#   define HK_REM2CUR      "Long Menu"
+#else
 #   define HK_REM2CUR      "Long User"
+#endif
 #   define HK_CUR2STACK    "Long Select.."
 #   define HK_REM2STACK    "Power"
 

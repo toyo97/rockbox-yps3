@@ -312,7 +312,11 @@
 #define VUMETER_MENU BUTTON_MENU
 #define VUMETER_UP   BUTTON_UP
 #define VUMETER_DOWN BUTTON_DOWN
+#if CONFIG_KEYPAD == SAMSUNG_YPS3_PAD
+#define LABEL_HELP   "Power"
+#else
 #define LABEL_HELP   "User"
+#endif
 #define LABEL_QUIT   "Back"
 #define LABEL_MENU   "Menu"
 #define LABEL_VOLUME "Up/Down"
