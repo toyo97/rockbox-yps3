@@ -215,7 +215,7 @@ clobbers only `ip` and the flags):
 
 | Step | Who writes | Where | Notes |
 |---|---|---|---|
-| copy `S3.ROM` to the music drive | Rockbox USB (or the OF's MTP) | music FAT32 only | Rockbox's writer is limited to the MBR's first partition |
+| copy `S3.ROM` to the music drive | Rockbox USB or the OF's MTP (both tested) | music FAT32 only | Rockbox's writer is limited to the MBR's first partition |
 | upgrade | stage 2 | sectors 7872512 .. +N and 7933952 .. +N, N = Total Size/512 + 1; then the first 16 sectors of both again | through Samsung's FTL, the same code that writes the OF's data |
 | upgrade | stage 2 | deletes `S3.ROM` | music FAT32 |
 | first OF boot after a change | OF | its registry / `SYSTEM.VER` / MTP DB on the system partition | settings reset (1.4) |
@@ -287,8 +287,9 @@ Developer checks, read only, with the development bootloader:
    `S3.ROM` is deleted afterwards (the OF's MTP listing of the drive's top
    folder, which also shows `.rockbox`, no longer has it). Still open:
    whether config word 2 stays 1 (the OF might clear it), which of
-   `S3.ROM` / `S3J.ROM` is tried first (decompiled lengths 11/12 bytes),
-   and whether a file copied over the OF's MTP is picked up.
+   `S3.ROM` / `S3J.ROM` is tried first (decompiled lengths 11/12 bytes).
+   A file copied over the OF's MTP (storage folder `S3` =
+   `/a/`) is picked up too (tested).
 3. Fast path or checked path at boot: the 0x1F0/0x1F1 offsets in
    `09e0179c`. Disassemble `09e0179c` to confirm.
 4. Cache/MPU state at the jump (`09e3517c`), and which rockboot init steps

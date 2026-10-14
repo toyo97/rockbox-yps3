@@ -154,16 +154,18 @@ Through Rockbox's USB drive (the normal way):
    settings may be reset. Delete `.rockbox` from the drive if you like.
 
 Through MTP, when the original firmware starts but Rockbox doesn't
-**[NOT YET TESTED: whether the bootloader sees a file copied through the
-original firmware's MTP mode; the MTP listing does show the drive's top
-folder, with `.rockbox`, so it looks likely]**:
+(tested, October 2026):
 
-1. Start the original firmware (hold on), plug the cable in.
-2. `gio mount -l` shows the player's `mtp://` address; `gio list
-   mtp://.../` shows its folders; pick the one that holds `Music`.
-3. `utils/s5l8700_dfu/yps3-restore.sh --mtp mtp://.../FOLDER/`
-4. Disconnect in the file manager, unplug, switch off, switch on. If
-   `S3.ROM` is still there afterwards, use the rescue below.
+1. Start the original firmware (hold on), plug the cable in, and open the
+   player once in the file manager so that it gets mounted.
+2. `gio mount -l` shows the player's address, like
+   `mtp://Samsung_Electronics_Co._Ltd._S3_a73f4368000000cd/`. Its storage
+   folder `S3` is the music drive's top folder (`gio list` on it shows
+   `Music` and `.rockbox`).
+3. `utils/s5l8700_dfu/yps3-restore.sh --mtp mtp://<device>/S3/`
+4. Disconnect in the file manager, unplug, switch off, switch on: a short
+   upgrade screen, then the original firmware; `S3.ROM` is gone
+   afterwards. If not, use the rescue below.
 
 ### 4. Rescue: nothing starts (DFU mode)
 

@@ -6,10 +6,9 @@
 #   yps3-restore.sh [--force] --mtp MTP_FOLDER [S3-original.ROM]
 #
 # MUSIC_DRIVE: where the music drive is mounted (Rockbox's USB mode).
-# --mtp: the original firmware's MTP storage, e.g. as listed by
-#   gio mount -l; MTP_FOLDER is the folder that holds Music, like
-#   mtp://SAMSUNG_YP-S3_xxxx/Internal/ (needs gio; not yet verified on the
-#   player that its bootloader sees a file copied this way).
+# --mtp: the original firmware's MTP storage, MTP_FOLDER = the storage
+#   folder S3 of the address gio mount -l shows, like
+#   mtp://Samsung_Electronics_Co._Ltd._S3_a73f4368000000cd/S3/ (needs gio).
 # S3-original.ROM: default nanddump/install/S3-original.ROM, made with
 #   yps3_mkrom.py extract nanddump/backup/hidden_area_ecc.img \
 #       nanddump/install/S3-original.ROM

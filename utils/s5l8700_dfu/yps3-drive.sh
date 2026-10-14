@@ -47,7 +47,7 @@ copy_image() {
 
 # copy_image_mtp original|combined IMAGE MTP_FOLDER [--force]
 # Through gio (GNOME's MTP support), to a player running the original
-# firmware. Not yet verified that the bootloader sees files copied this way.
+# firmware: MTP_FOLDER is mtp://<device>/S3/ (gio mount -l).
 copy_image_mtp() {
     local kind=$1 image=$2 dir=${3%/} force=$4 list size
     command -v gio > /dev/null || die "gio is needed for --mtp (package gvfs)"
