@@ -28,7 +28,7 @@ bootloader (see "For the owner" below).**
 | FM radio (tuner answers with DEVICEID 0x1B63) | works, scan finds stations |
 | USB mass storage | works, reads ~1.6-1.9 MB/s, writes ~0.56 MB/s |
 | Writing to the flash (music partition) | works |
-| Permanent install (`S3.ROM`) | works, Rockbox starts on battery |
+| Permanent install (`S3.ROM`) | works: Rockbox, or the original firmware with the power slider |
 | Battery calibration, power off on battery | not done |
 
 ## For the owner: install, go back, rescue
@@ -140,10 +140,12 @@ utils/s5l8700_dfu/yps3-install.sh MUSIC_DRIVE
 unplug, switch off, switch on. The player writes the new firmware,
 `S3.ROM` disappears and Rockbox starts.
 
-Daily use: switch on as usual for Rockbox. For the original firmware,
-keep the power slider pushed through the whole start animation; when it
-stops on its last frame, let go **[NOT YET TESTED on the player]**. Power and hold are the
-same slider, so the hold position can't be used to choose.
+Daily use (both tested, October 2026): switch on as usual for Rockbox.
+For the original firmware, keep the power slider pushed through the whole
+start animation; when it stops on its last frame, let go. Power and hold
+are the same slider, so the hold position can't be used to choose. With
+Rockbox installed the start animation takes longer than before (the
+player's bootloader loads the whole 25 MB image instead of 9 MB).
 
 ### 3. Go back to the original firmware
 

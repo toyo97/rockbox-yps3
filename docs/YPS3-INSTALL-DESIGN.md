@@ -1,9 +1,9 @@
 # Samsung YP-S3: permanent install and restore, design note
 
 Status: implemented (chain mode in `crt0.S`, tools in `utils/s5l8700_dfu`).
-October 2026: the no-op upgrade worked (the original image written through
-stage 2's upgrade path); the combined image has only run from SDRAM over
-DFU, it hasn't been installed yet. The goal is a
+October 2026: installed on the owner's player; Rockbox starts on battery,
+the original firmware starts when the power slider is kept pushed through
+the start animation (see the experiment log in section 2). The goal is a
 Rockbox install that starts without the USB cable, and a restore to the
 original firmware (OF) that the owner can run alone with one documented
 script.
@@ -78,11 +78,13 @@ Build Dir : NeoFirm
   The header is not covered, so `FWOK` and the entry literal can change
   without changing it.
 * The bytes between `ROM Size` and `Data Address` are not padding (1.44
-  MB of data), but nothing ever uses them: a normal start loads only
-  `ROM Size` bytes (see 1.3), and the OF itself only reads the first 16
-  sectors of area 1 and area 3 (its data part, from `Data Address`)
-  through its own copy of the area helpers (`080e6960` read, `080e68e4`
-  write). [H for the code, M that nothing else reads them]
+  MB of data). A normal start doesn't load them (see 1.3), and the OF's
+  area helpers (`080e6960` read, `080e68e4` write) are only called for
+  area 0, the first 16 sectors of area 1 and area 3. Still, **the OF hung
+  when rockboot was written into this gap and `ROM Size` grown over it,
+  even with the stub bypassed** (experiment log in section 2); why is
+  not known. Leave the OF's bytes and `ROM Size`/`Data Address` layout
+  alone.
 * Area 1 holds stale data after `Total Size`. The image is only read up
   to `Total Size`.
 * `Total Size` must be at most 0x1E00000 (`09e030f0`); the checked path
@@ -164,26 +166,34 @@ or a restore. **This design never writes area 0.**
 
 ### Option C: combined image through `S3.ROM`
 
-Combined image layout (`Total Size` at most about 30 MiB):
+Combined image layout (`Total Size` at most about 30 MiB), made by
+`yps3_mkrom.py combine`:
 
 ```
 0x0000000  OF header, unchanged except:
-             word at 0x004 -> 0x088A1000, rockboot (was 0x08001000)
-             ROM Size -> end of rockboot (9044384 -> about 9140000)
-             Check Sum -> new value; Total Size unchanged
-0x0000200  OF code, byte for byte, up to the old ROM Size (0x8A01A0)
-0x08A1000  rockboot.ebn as built (about 100 KB), 4-byte aligned, over
-           unused bytes of the gap before Data Address
-0x0A00000  OF data part (Data Address), byte for byte
+             word at 0x004 -> 0x09800000, rockboot (was 0x08001000)
+             ROM Size and Total Size -> length of the combined image
+             Check Sum -> new value; FWOK cleared
+0x0000200  the OF image, byte for byte, to its Total Size (25160329)
+           0xff up to 0x1800000
+0x1800000  rockboot.ebn as built (about 100 KB), 4-byte aligned
 ```
 
-The OF stays where it expects to be (entry 0x08001000, data at 10 MiB), so
-nothing in the OF is relocated or patched. A normal start loads `ROM Size`
-bytes, now including rockboot, so a start takes about as long as before;
-then the `ldr pc` goes to the stub. (The first layout put rockboot at
-0x1800000, past `ROM Size`: only loaded by the upgrade start.) Setting
-`ROM Size = Total Size` would also work but loads 25 MB on every start
-instead of 9 MB.
+`ROM Size = Total Size` makes a normal start (stage 2's fast path) load the
+whole image, so the start animation takes longer than with the OF alone
+(about 25 MB instead of 9 MB). Stage 2's upgrade copy doesn't use `ROM
+Size` (`09e031ac` writes `Total Size/512 + 1` sectors to areas 1 and 4),
+and areas 1 and 2 start at the same sector, so `ROM Size` beyond `Data
+Address` is fine for stage 2.
+
+### Experiment log (October 2026, on the owner's player)
+
+| Image | Rockbox | OF |
+|---|---|---|
+| rockboot appended at 0x1800000, original `ROM Size` | started once, right after the upgrade (the upgrade path jumps with the whole file in RAM), not on later starts (the fast path loads only `ROM Size` bytes) | hung (stale stub) |
+| rockboot in the gap at 0x8A1000, `ROM Size` grown over it | starts | hangs on stage 2's last frame, with the hold switch and with the power slider |
+| the same with entry word 1 = 0x08001000 (stub bypassed) | - | hangs: the gap/`ROM Size` change breaks the OF, not the stub |
+| full load: OF bytes untouched, rockboot at 0x1800000, `ROM Size = Total Size` | **starts** (every time, on battery) | **starts** (power slider kept pushed through the start animation) |
 
 **Chain stub** (the first instructions of `_newstart` in rockboot's crt0):
 
@@ -206,10 +216,9 @@ instead of 9 MB.
   USB), so a long push doesn't switch it off. **[L] the hardware doesn't
   cut power on a long push either.**
 * The first version used the hold switch (P4.3). On this player power and
-  hold are one slider, and the OF didn't start with hold on (stuck on
-  stage 2's last frame, seen twice); the OF polls hold at run time
-  (`08637a78`, used by `0816ae34`, `08223a94`, `08223c70`) but no start-up
-  wait was found in the code.
+  hold are one slider, so hold can't be on at power-on; sliding to hold
+  during the animation worked as a selector but the OF hung then. Those
+  hangs came from the image layout (experiment log), not from hold.
 * **rockboot in chain mode** (implemented in `crt0.S`, commit "chain mode
   behind the original firmware"). The normal `rockboot.ebn` is used as is,
   with no separate build:
@@ -233,9 +242,9 @@ instead of 9 MB.
      init.**
   5. The DFU length word at 0x24 of rockboot is irrelevant here.
      `Total Size` covers the whole appended part.
-* The OF sees a different `Total Size` and entry literal in its RAM copy of
-  the header, plus extra bytes above its image. **[L] the OF doesn't read
-  those.** Its `Check Sum` is still consistent.
+* The OF sees a different `ROM Size`, `Total Size` and entry literal in its
+  RAM copy of the header, plus rockboot above its image; it starts fine
+  with that (full-load layout). Its `Check Sum` is still consistent.
 
 ## 3. What is written
 
@@ -282,22 +291,23 @@ Developer checks, read only, with the development bootloader:
   but hung at the logo for minutes.** This is not stage 2's hand-over state
   (caches, MIUCON, clocks, whatever stage 2 sets up for the OF), so the
   real behaviour with hold on is only known after the install (see the
-  risks);
-* after the install: hold off starts Rockbox, hold on the OF; areas 1/4
-  read back and compared with `S3-combined.ROM`.
+  risks; the hangs turned out to come from the image layout);
+* after the install: Rockbox on a normal start, the OF with the power
+  slider kept pushed; areas 1/4 read back and compared with the image.
+  **Done for the full-load image, see the experiment log.**
 
 ## 5. Risks
 
 | Risk | Effect | Mitigation |
 |---|---|---|
-| Chain stub or rockboot crashes after install | player doesn't start (hold off), OF still starts with hold on if the stub works | restore via DFU + Rockbox USB; test over DFU first (section 4) |
+| Chain stub or rockboot crashes after install | Rockbox doesn't start; the OF still starts with the power slider if the stub works | restore via DFU + Rockbox USB; test over DFU first (section 4) |
 | Stub broken, both paths dead | no start at all | stage 2 still runs the upgrade check first: restore via DFU |
 | Stage 2 doesn't pick up `S3.ROM` (config word 2, file name, volume) | nothing happens | ruled out for now by the no-op upgrade (it worked); if the OF clears config word 2 later, connecting the OF to a PC once may set it again **[L]**; fallback is option B |
 | Music FAT damaged by Rockbox's writer | stage 2 reformats both partitions at the next start (data lost, player still starts) | existing FTL write tests; back up music |
 | Power loss during the upgrade | copy A or B partly written | `S3.ROM` files are made with 0x1FC cleared, so a half-written copy has no `FWOK` (step 2 overwrites the old sector 0 first) and boot stops in stage 2's USB Mode instead of jumping into it. Then copy the file again. **[L] whether the file is still there after a power loss** (it is deleted only at the end) |
-| OF reacts to the changed header or the extra bytes | OF misbehaves with hold on | **[L]**; restore removes it |
-| OF hangs when started through the stub (hold on). Seen over DFU from the development loader's state (hung at the S3 logo); real boot from stage 2 not tried | original firmware unusable while Rockbox is installed | Rockbox (hold off) still starts; restore through its USB drive: stage 2 handles `S3.ROM` before it starts any image. If it happens, look at what stage 2 sets up before the jump (`09e3517c`, interrupt state) and restore that in the stub |
-| Hold switch input not as expected after stage 2 | wrong choice at start-up | checked after the no-op upgrade; the stub can configure PCON4 itself |
+| OF reacts to the changed header or the extra bytes | OF misbehaves | seen with the gap layout; the full-load layout changes only the header and appends; restore removes it |
+| OF hangs when started through the stub | original firmware unusable while Rockbox is installed | happened with rockboot in the code gap; the full-load layout starts it (experiment log). Rockbox still starts in any case, and restoring works through its USB drive: stage 2 handles `S3.ROM` before it starts any image |
+| A long push of the power slider cuts the power in hardware | the OF can't be selected | not seen on the player; restore is the way back to the OF alone |
 
 ## 6. Tooling still missing
 
