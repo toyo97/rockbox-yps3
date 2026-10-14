@@ -178,12 +178,22 @@ void system_init(void)
 
 void system_reboot(void)
 {
-#ifdef IPOD_NANO2G
+#if defined(IPOD_NANO2G) || defined(SAMSUNG_YPS3)
 #ifdef HAVE_STORAGE_FLUSH
     storage_flush();
 #endif
 
     /* Reset the SoC */
+#ifdef SAMSUNG_YPS3
+    /* the watchdog reset of Samsung's own stage 1 loader on this chip */
+    asm volatile("msr CPSR_c, #0xd3    \n"
+                 "mov r1, #0x3c800000  \n"
+                 "mov r0, #0x10        \n"
+                 "str r0, [r1, #4]     \n"   /* WDTCNT */
+                 "mov r0, #0           \n"
+                 "str r0, [r1]         \n"   /* WDTCON: on */
+                 : : : "r0", "r1");
+#else
     asm volatile("msr CPSR_c, #0xd3    \n"
                  "mov r5, #0x110000    \n"
                  "add r5, r5, #0xff    \n"
@@ -193,6 +203,7 @@ void system_reboot(void)
                  "mov r6, #0xff0       \n"
                  "str r6, [r10,#4]     \n"
                  "str r5, [r10]        \n");
+#endif
 
     /* Wait for reboot to kick in */
     while(1);
