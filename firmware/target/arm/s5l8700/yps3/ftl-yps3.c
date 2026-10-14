@@ -70,10 +70,30 @@
 static struct mutex ftl_mtx;
 #define FTL_LOCK()   mutex_lock(&ftl_mtx)
 #define FTL_UNLOCK() mutex_unlock(&ftl_mtx)
+#define FTL_NOW()    current_tick
+#define FTL_SLOW     (HZ / 2)
 #else
 #define FTL_LOCK()
 #define FTL_UNLOCK()
+#define FTL_NOW()    0
+#define FTL_SLOW     1
 #endif
+
+/* for the debug screen: the longest read, write and sync call in ticks,
+   waiting for the lock included, and the calls over half a second */
+long ftl_stat_tmax[3];
+unsigned long ftl_stat_slow;
+
+static void ftl_time(int kind, long start)
+{
+    long t = FTL_NOW() - start;
+    if (t > ftl_stat_tmax[kind]) {
+        ftl_stat_tmax[kind] = t;
+    }
+    if (t > FTL_SLOW) {
+        ftl_stat_slow++;
+    }
+}
 
 #define DIES                2
 #define BLOCKS_PER_DIE      4096
@@ -147,6 +167,7 @@ static bool ftl_ok = false;
 bool ftl_use_ecc = false;
 static uint8_t ecc_sector[SECTOR_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(4)));
 static uint8_t ecc_spare[0x28 + 8 * 9] __attribute__((aligned(4)));
+static uint8_t ecc_page[PAGE_SIZE] SDRAM_BSS_ATTR __attribute__((aligned(16)));
 static unsigned long ecc_corrected, ecc_failed;
 
 /* low level */
@@ -187,18 +208,16 @@ static int vfl_read(uint32_t vpn, unsigned int offset, void *dst,
         return raw_read(die, pblock, page, col, dst, len);
     }
 
-    /* whole sectors: read them and their ECC bytes, then correct */
+    /* whole sectors: read them in one go and their ECC bytes (two page
+       reads instead of one per sector, each costs the chip's read time),
+       then correct them one by one */
     unsigned int first = col / SECTOR_SIZE, n = len / SECTOR_SIZE, i;
-    if (raw_read(die, pblock, page, PAGE_SIZE, ecc_spare, sizeof(ecc_spare))) {
+    if (raw_read(die, pblock, page, PAGE_SIZE, ecc_spare, sizeof(ecc_spare)) ||
+        raw_read(die, pblock, page, col, ecc_page, len)) {
         return -1;
     }
     for (i = 0; i < n; i++) {
-        uint8_t *d = (uint8_t *)dst + i * SECTOR_SIZE;
-        if (raw_read(die, pblock, page, col + i * SECTOR_SIZE, ecc_sector,
-                     SECTOR_SIZE)) {
-            return -1;
-        }
-        int rc = nand_ll_ecc_correct(ecc_sector,
+        int rc = nand_ll_ecc_correct(ecc_page + i * SECTOR_SIZE,
                                      &ecc_spare[0x28 + 9 * (first + i)], true);
         if (rc < 0) {
             ecc_failed++;
@@ -206,8 +225,8 @@ static int vfl_read(uint32_t vpn, unsigned int offset, void *dst,
         else if (rc > 0) {
             ecc_corrected++;
         }
-        memcpy(d, ecc_sector, SECTOR_SIZE);
     }
+    memcpy(dst, ecc_page, len);
     return 0;
 }
 
@@ -1522,6 +1541,7 @@ uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
 {
     uint32_t rc;
     int i;
+    long start = FTL_NOW();
     FTL_LOCK();
     rc = ftl_read_nand(sector, count, buffer);
     for (i = 0; !rc && wcache_ready && i < WCACHE_PAGES; i++) {
@@ -1536,6 +1556,7 @@ uint32_t ftl_read(uint32_t sector, uint32_t count, void *buffer)
         }
     }
     FTL_UNLOCK();
+    ftl_time(0, start);
     return rc;
 }
 
@@ -1543,6 +1564,7 @@ uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
 {
     const uint8_t *src = buffer;
     uint32_t rc = 0;
+    long start = FTL_NOW();
 
     FTL_LOCK();
     ftl_stat_wcalls++;
@@ -1611,17 +1633,20 @@ uint32_t ftl_write(uint32_t sector, uint32_t count, const void *buffer)
         count -= n;
     }
     FTL_UNLOCK();
+    ftl_time(1, start);
     return rc;
 }
 
 uint32_t ftl_sync(void)
 {
     uint32_t rc = 0;
+    long start = FTL_NOW();
     FTL_LOCK();
     if (wcache_ready) {
         rc = cache_flush();
     }
     FTL_UNLOCK();
+    ftl_time(2, start);
     return rc;
 }
 

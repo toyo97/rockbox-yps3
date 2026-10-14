@@ -220,6 +220,9 @@ int main(int argc, char **argv)
     int ops = argc > 2 ? atoi(argv[2]) : 2000, i, fails = 0;
     static uint8_t data[64 * 512];
     memset(lastprog, -1, sizeof(lastprog));
+    /* FTLSIM_ECC=1: read through the ECC path (the fake ECC never corrects) */
+    extern bool ftl_use_ecc;
+    ftl_use_ecc = getenv("FTLSIM_ECC") != NULL;
     load_backup(argc > 1 ? argv[1] : "backup");
     shadow = calloc(SECS, 512);
     if (ftl_init()) { printf("ftl_init failed\n"); ftl_debug_log(logf_print); return 1; }
