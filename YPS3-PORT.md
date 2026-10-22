@@ -27,8 +27,8 @@ storage, saving settings and files. Only that one player has been tested.**
 | USB mass storage | works, reads ~1.6-1.9 MB/s, writes ~0.56 MB/s |
 | Permanent install (`S3.ROM`) | works: Rockbox, or the original firmware with the power slider |
 | Charging, battery level, power off at low battery | works; the discharge curve is not finely calibrated |
-| FM recording | WAV files are written but silent; under investigation |
-| Video (mpegplayer) | being tested |
+| Video (mpegplayer, ARM assembler on big-endian) | works |
+| FM recording | WAV files are written but silent: the I2S receiver delivers zeros |
 | LCD type 1 | written in 2009, never tested |
 
 ## Install, go back, rescue
@@ -186,7 +186,7 @@ Through MTP, when the original firmware starts but Rockbox doesn't
    animation, see Install), plug the cable in, and open the
    player once in the file manager so that it gets mounted.
 2. `gio mount -l` shows the player's address, like
-   `mtp://Samsung_Electronics_Co._Ltd._S3_<serial>/`. Its storage
+   `mtp://Samsung_Electronics_Co._Ltd._S3_.../`. Its storage
    folder `S3` is the music drive's top folder (`gio list` on it shows
    `Music` and `.rockbox`).
 3. `utils/s5l8700_dfu/yps3-restore.sh --mtp mtp://<device>/S3/`
@@ -432,13 +432,12 @@ same steps on every push.
 
 ## Roadmap
 
-1. FM recording: the files are silent. The HW info screen shows what the
-   I2S receiver delivers (`rec n ... nz ...` lines) to tell missing data
-   from zeros.
-2. mpegplayer on big-endian ARM: confirm the assembler on hardware, and the
-   start-up stutter while the buffer fills.
-3. Battery: calibrate the discharge curve.
-4. Untested hardware: LCD type 1 panels, other capacities and flash chips.
+1. FM recording: the files are silent. The DMA runs but the I2S receiver
+   delivers only zeros (HW info screen, `rec n ... nz ...` lines), so the
+   codec's ADC path or a pin is still set up differently from the
+   original firmware.
+2. Battery: calibrate the discharge curve.
+3. Untested hardware: LCD type 1 panels, other capacities and flash chips.
 
 ## References
 
