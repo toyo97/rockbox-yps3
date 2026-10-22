@@ -38,7 +38,10 @@ Rockbox, and the original firmware is still there when you want it.
 | Permanent install, original firmware kept | ✅ |
 | Going back to the original firmware, DFU rescue | ✅ |
 | FM recording | ❌ files are written but silent |
-| LCD type 1 panels, other capacities | ❔ untested |
+| LCD type 1 panels\*, other capacities | untested |
+
+\* The YP-S3 shipped with two screen types; this port was tested on type 2.
+The type 1 code dates from 2009 and has never been tested.
 
 ## Quick start
 
