@@ -50,8 +50,8 @@ with the exact commands, is in
 [YPS3-PORT.md, "Install, go back, rescue"](YPS3-PORT.md#install-go-back-rescue).
 
 1. **Get the files:** `rockbox.zip`, `rockboot.ebn` and the tools from the
-   latest [build](https://github.com/toyo97/rockbox-yps3/actions/workflows/yps3-build.yml)
-   (artifact `yps3-rockbox`), or [build them yourself](YPS3-PORT.md#building).
+   latest [release](https://github.com/toyo97/rockbox-yps3/releases/latest)
+   (tools are in `utils/s5l8700_dfu/`), or [build them yourself](YPS3-PORT.md#building).
 2. **Back up the flash** over DFU mode. The backup is the only copy of
    your original firmware: keep it safe. Samsung's firmware is not part
    of this repository.
@@ -72,7 +72,9 @@ power slider, press a pin into the reset hole for 1-2 seconds, release
 the pin, then shortly after the slider. The screen stays dark and the PC
 sees USB device `0419:0145`.
 
-The user manual (artifact `yps3-manual`) covers the keys and features.
+The **[user manual for the YP-S3 (PDF)](https://github.com/toyo97/rockbox-yps3/releases/latest/download/rockbox-yps3-manual.pdf)**
+covers the keys, the features and the installation. Firmware and
+bootloader downloads are on the [Releases](https://github.com/toyo97/rockbox-yps3/releases) page.
 
 ## Acknowledgements
 
