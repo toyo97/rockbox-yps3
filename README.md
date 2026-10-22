@@ -82,6 +82,10 @@ The user manual (artifact `yps3-manual`) covers the keys and features.
   (LCD, keys, radio, power), and everyone in the
   [porting thread](https://forums.rockbox.org/index.php?topic=22418.0) and
   on the [wiki page](https://www.rockbox.org/wiki/SamsungYPS3).
+* The theme in the photo is the
+  [UNDERTALE theme](https://themes.rockbox.org/index.php?themeid=3473&target=sansae200)
+  by WalleBot (Kyle M), a modified SMART by Sorin Costache, with the
+  Determination font by Haley Wakamatsu.
 
 This is not an official Rockbox release; please don't report problems with
 it to the Rockbox project. No warranty (GPL version 2). Port notes,
