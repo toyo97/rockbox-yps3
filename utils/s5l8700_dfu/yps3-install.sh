@@ -7,7 +7,7 @@
 #   yps3_mkrom.py combine nanddump/install/S3-original.ROM \
 #       build-yps3/rockboot.ebn nanddump/install/S3-combined.ROM
 # and build-yps3-full/rockbox.zip, unpacked to the drive (.rockbox).
-# See "For the owner" in YPS3-PORT.md.
+# See "Install, go back, rescue" in YPS3-PORT.md.
 # Only copies files to the mounted drive; the player's bootloader does
 # the rest at the next start. Undo with yps3-restore.sh.
 set -e

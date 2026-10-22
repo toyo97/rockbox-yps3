@@ -8,11 +8,11 @@
 # MUSIC_DRIVE: where the music drive is mounted (Rockbox's USB mode).
 # --mtp: the original firmware's MTP storage, MTP_FOLDER = the storage
 #   folder S3 of the address gio mount -l shows, like
-#   mtp://Samsung_Electronics_Co._Ltd._S3_a73f4368000000cd/S3/ (needs gio).
+#   mtp://Samsung_Electronics_Co._Ltd._S3_<serial>/S3/ (needs gio).
 # S3-original.ROM: default nanddump/install/S3-original.ROM, made with
 #   yps3_mkrom.py extract nanddump/backup/hidden_area_ecc.img \
 #       nanddump/install/S3-original.ROM
-# or an official Samsung S3.ROM. See "For the owner" in YPS3-PORT.md.
+# or an official Samsung S3.ROM. See "Install, go back, rescue" in YPS3-PORT.md.
 # Only copies a checked file to the player; the player's bootloader writes
 # it at the next start.
 set -e
